@@ -107,12 +107,23 @@ export const getManualProgressRows = async (manualId, tasks) => {
     let total = 0
     let submitted = 0
     let graded = 0
+    let evaluated = 0
+    let passed = 0
     for (const t of tasks) {
       const g = r.taskGrades[t.id]
       if (!g) continue
       if (['submitted','graded'].includes(g.status)) submitted++
-      if (g.status === 'graded') { graded++; total += Number(g.grade) || 0 }
-      if (g.status === 'submitted' && typeof g.grade === 'number') total += Number(g.grade) || 0
+      const pts = Number(t.points || 0)
+      const hasEval = typeof g.auto_passed === 'boolean'
+      const effective = typeof g.grade === 'number'
+        ? Number(g.grade) || 0
+        : (hasEval ? (g.auto_passed ? pts : 0) : 0)
+      if (g.status === 'graded') graded++
+      if (hasEval) {
+        evaluated++
+        if (g.auto_passed) passed++
+      }
+      total += effective
     }
     const possible = tasks.reduce((a, t) => a + Number(t.points || 0), 0)
     const pct = possible ? (total / possible) * 100 : 0
@@ -120,6 +131,7 @@ export const getManualProgressRows = async (manualId, tasks) => {
     if (submitted === tasks.length && tasks.length > 0) statusLabel = 'All submitted'
     else if (submitted > 0) statusLabel = `${submitted}/${tasks.length} in progress`
     if (graded === tasks.length && tasks.length > 0) statusLabel = 'All graded'
+    if (evaluated === tasks.length && tasks.length > 0) statusLabel = passed === tasks.length ? 'All correct' : 'Submitted (some wrong)'
     return { ...r, total, possible, pct: Number(pct.toFixed(2)), statusLabel }
   })
 

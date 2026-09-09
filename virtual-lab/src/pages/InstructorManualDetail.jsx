@@ -364,7 +364,6 @@ export default function InstructorManualDetail() {
                       {tasks.map((t) => (
                         <th key={t.id || t.order_index}>
                           T{Number(t.order_index) || '?'}
-                          <span className="small muted" style={{ marginLeft: 6, fontWeight: 400 }}>({t.points}p)</span>
                         </th>
                       ))}
                       <th>Total</th>

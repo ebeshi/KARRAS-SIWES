@@ -6,6 +6,7 @@ import StudentDashboard from './pages/StudentDashboard.jsx'
 import StudentManualWorkspace from './pages/StudentManualWorkspace.jsx'
 import StudentAssignmentDetail from './pages/StudentAssignmentDetail.jsx'
 import InstructorAssignmentDetail from './pages/InstructorAssignmentDetail.jsx'
+import PyodideTest from './pages/PyodideTest.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import { AuthProvider, useAuth } from './context/AuthContext.jsx'
 
@@ -34,6 +35,7 @@ function Shell() {
       <SetupBanner />
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/pyodide-test" element={<PyodideTest />} />
         <Route path="/instructor" element={
           <ProtectedRoute requiredRole="instructor">
             <InstructorDashboard />

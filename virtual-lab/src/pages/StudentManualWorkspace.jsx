@@ -147,13 +147,17 @@ export default function StudentManualWorkspace() {
         timeoutMs: 20000,
       })
       setRunResult(result)
-      setRunOutput(result.output || (result.ok ? '(no output)' : ''))
+      const rawOut = result.output || ''
+      const displayOut = rawOut.trim() === ''
+        ? (result.ok ? 'Ran successfully. (No output — use print() to see values.)' : '')
+        : rawOut
+      setRunOutput(displayOut)
       setAutoPass(result.passed)
       if (typeof result.passed === 'boolean' || result.ok) {
         try {
           const row = await upsertTaskSubmission({
             task_id: task.id, student_id: profile.id, manual_id: manual.id,
-            code, draft_code: code, run_output: result.output || '',
+            code, draft_code: code, run_output: rawOut,
             auto_passed: typeof result.passed === 'boolean' ? result.passed : null,
             status: subMap[task.id]?.status || (code ? 'in_progress' : 'not_started'),
           })
@@ -171,15 +175,50 @@ export default function StudentManualWorkspace() {
     if (!task || !profile || !manual) return
     setSaving(true); setSaveMsg(null)
     try {
+      let nextRunOutput = runOutput
+      let nextAutoPass = autoPass
+      let nextStatus = 'submitted'
+      let nextGrade = null
+
+      if (task.expected_output) {
+        const result = await runCode({
+          code,
+          language: task.language === 'javascript' ? 'javascript' : 'python',
+          expectedOutput: task.expected_output || null,
+          timeoutMs: 20000,
+        })
+        const rawOut = result.output || ''
+        const displayOut = rawOut.trim() === ''
+          ? (result.ok ? 'Ran successfully. (No output — use print() to see values.)' : '')
+          : rawOut
+        setRunResult(result)
+        setRunOutput(displayOut)
+        setAutoPass(result.passed)
+
+        nextRunOutput = rawOut
+        nextAutoPass = result.passed
+        if (result.passed === true) {
+          nextStatus = 'graded'
+          nextGrade = Number(task.points || 0)
+        } else if (result.passed === false) {
+          nextStatus = 'submitted'
+          nextGrade = 0
+        } else {
+          nextStatus = 'submitted'
+          nextGrade = null
+        }
+      }
+
       const row = await upsertTaskSubmission({
         task_id: task.id,
         student_id: profile.id,
         manual_id: manual.id,
         code,
         draft_code: code,
-        status: 'submitted',
-        run_output: runOutput,
-        auto_passed: autoPass,
+        status: nextStatus,
+        run_output: nextRunOutput,
+        auto_passed: nextAutoPass,
+        grade: nextGrade,
         submitted_at: new Date().toISOString(),
       })
       setSubMap((prev) => ({ ...prev, [task.id]: row }))
@@ -354,7 +393,6 @@ export default function StudentManualWorkspace() {
                 </div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span className="small muted">{task.language === 'javascript' ? 'JavaScript' : 'Python'}</span>
-                  <span className="small muted">· {task.points} points</span>
                   <button className="btn btn-ghost btn-sm" onClick={() => setTaskIdx(Math.max(0, taskIdx - 1))} disabled={taskIdx === 0}>← Prev</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => setTaskIdx(Math.min(tasks.length - 1, taskIdx + 1))} disabled={taskIdx === tasks.length - 1 || !canGoNext}>
                     Next →
