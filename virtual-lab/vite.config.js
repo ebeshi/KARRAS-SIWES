@@ -9,7 +9,7 @@ const ROOT = path.resolve(__dirname, '..')
 export default defineConfig({
   root: __dirname,
   plugins: [react()],
-  base: '/vl/',
+  base: '/',
   resolve: {
     modules: [
       path.resolve(__dirname, 'node_modules'),

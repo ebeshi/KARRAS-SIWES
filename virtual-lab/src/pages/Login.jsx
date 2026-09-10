@@ -103,7 +103,7 @@ export default function Login() {
       <div className="page" style={{ width: '100%', maxWidth: 520 }}>
         <div className="brand">
           <div className="brand-mark">
-            <img src="/vl/k-logo.svg" alt="KARRAS" width="46" height="46" style={{ display: 'block' }} />
+            <img src="/k-logo.svg" alt="KARRAS" width="46" height="46" style={{ display: 'block' }} />
           </div>
           <h2>KARRAS</h2>
           <h1>Virtual Lab</h1>

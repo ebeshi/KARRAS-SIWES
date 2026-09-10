@@ -233,7 +233,7 @@ export default function StudentManualWorkspace() {
 
   const karrasChip = (
     <a href="/" className="karras-chip" title="Back to KARRAS platform">
-      <img src="/vl/k-logo.svg" alt="" width="14" height="14" style={{ display: 'block' }} />
+      <img src="/k-logo.svg" alt="" width="14" height="14" style={{ display: 'block' }} />
       KARRAS
     </a>
   )
