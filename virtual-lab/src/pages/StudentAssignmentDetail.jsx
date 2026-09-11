@@ -1,7 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-import { supabase } from '../lib/supabase.js'
 import CodeEditor from '../components/CodeEditor.jsx'
 
 const PISTON_URL = 'https://emkc.org/api/v2/piston/execute'
@@ -190,39 +189,10 @@ export default function StudentAssignmentDetail() {
 
   useEffect(() => {
     if (!id || !profile) return
-    let cancelled = false
-    const load = async () => {
-      setLoading(true)
-      try {
-        const { data: asgn, error: aErr } = await supabase
-          .from('assignments')
-          .select('id, title, description, deadline, expected_output, manual_pdf_url, created_at, users!assignments_instructor_id_fkey(full_name)')
-          .eq('id', id)
-          .single()
-        if (aErr) throw aErr
-        if (!cancelled) setAssignment(asgn)
-
-        const { data: sub, error: sErr } = await supabase
-          .from('submissions')
-          .select('id, code, submitted_at, grade, feedback, status, auto_passed')
-          .eq('assignment_id', id)
-          .eq('student_id', profile.id)
-          .maybeSingle()
-        if (sErr) throw sErr
-        if (!cancelled) {
-          setSubmission(sub)
-          if (sub?.code != null) setCode(sub.code)
-        }
-      } catch (err) {
-        console.error(err)
-        setError(err.message || 'Could not load assignment')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
-    return () => { cancelled = true }
+    setLoading(false)
+    setError('Standalone assignments are migrated to Lab Manuals.')
   }, [id, profile])
+
 
   const deadlinePast = useMemo(() => {
     if (!assignment?.deadline) return false

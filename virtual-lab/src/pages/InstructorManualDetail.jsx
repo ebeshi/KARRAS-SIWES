@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-import { supabase } from '../lib/supabase.js'
+import { uploadPdf, upsertTaskSubmission } from '../lib/api.js'
 import {
   getManualDetailForInstructor, upsertTasksForManual, deleteTasksById,
   getManualProgressRows, updateManual,
@@ -47,7 +47,6 @@ export default function InstructorManualDetail() {
   const [mPdf, setMPdf] = useState(null)
   const [patchSaving, setPatchSaving] = useState(false)
 
-  const supabaseStorageUrl = `${import.meta.env.VITE_SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/manuals`
 
   const load = async () => {
     if (!id || !profile) return
@@ -122,12 +121,6 @@ export default function InstructorManualDetail() {
           points: Number.isFinite(+t.points) ? Math.max(0, +t.points) : 10,
         }))
 
-      const existingIds = tasks.map((t) => t.id).filter(Boolean)
-      const serverCurrent = await supabase.from('tasks').select('id').eq('manual_id', manual.id)
-      const serverIds = new Set((serverCurrent?.data || []).map((t) => t.id))
-      const toDelete = existingIds.filter((id) => !serverIds.has(id))
-      if (toDelete.length) await deleteTasksById(toDelete)
-
       const upserted = await upsertTasksForManual(manual.id, normalized)
       const refreshed = upserted.slice().sort((a, b) => a.order_index - b.order_index)
       setTasks(refreshed)
@@ -168,13 +161,7 @@ export default function InstructorManualDetail() {
       const file = mPdf
       if (file.type && file.type !== 'application/pdf') throw new Error('PDF only')
       if (file.size > 20 * 1024 * 1024) throw new Error('PDF must be under 20MB')
-      const safeSlug = (manual.course_code || manual.id).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40)
-      const path = `${Date.now()}-${safeSlug}-${Math.random().toString(36).slice(2,8)}.pdf`
-      const { error: upErr } = await supabase.storage
-        .from('manuals')
-        .upload(path, file, { cacheControl: '3600', upsert: false, contentType: 'application/pdf' })
-      if (upErr) throw new Error('PDF upload failed: ' + (upErr.message || String(upErr)))
-      const url = `${supabaseStorageUrl}/${path}`
+      const url = await uploadPdf(file)
       await patchManual({ manual_pdf_url: url })
       setMPdf(null)
       if (document.getElementById('manual_pdf_detail')) document.getElementById('manual_pdf_detail').value = ''
@@ -398,7 +385,7 @@ export default function InstructorManualDetail() {
                                     grade, status,
                                   }
                                   try {
-                                    await supabase.from('task_submissions').upsert(payload, { onConflict: 'task_id, student_id' })
+                                    await upsertTaskSubmission(payload)
                                     const refreshed = await getManualProgressRows(id, tasks)
                                     setProgressRows(refreshed)
                                   } catch (e) {

@@ -1,76 +1,52 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import { supabase, supabaseMissing, initError as initErr } from '../lib/supabase.js'
+import { auth } from '../lib/api.js'
 
 const AuthContext = createContext(null)
+const STORAGE_KEY = 'vl_auth_session'
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
-  const [loading, setLoading] = useState(!supabaseMissing)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (supabaseMissing) return
     let mounted = true
-
-    const fetchProfile = async (authUser) => {
-      if (!authUser || !supabase) {
-        setProfile(null)
-        return
-      }
-      const { data, error } = await supabase
-        .from('users')
-        .select('id, email, role, full_name')
-        .eq('id', authUser.id)
-        .single()
-      if (mounted) {
-        if (error) {
-          console.warn('profile fetch error', error)
-          setProfile(null)
-        } else {
-          setProfile(data)
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        if (parsed?.user && parsed?.profile) {
+          setUser(parsed.user)
+          setProfile(parsed.profile)
         }
       }
-    }
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const u = session?.user ?? null
-      if (mounted) {
-        setUser(u)
-        fetchProfile(u).finally(() => setLoading(false))
-      }
-    })
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      const u = session?.user ?? null
-      setUser(u)
-      fetchProfile(u)
-    })
-
-    return () => {
-      mounted = false
-      listener?.subscription?.unsubscribe()
+    } catch (e) {
+      console.warn('Failed to restore auth session:', e)
+    } finally {
+      if (mounted) setLoading(false)
     }
   }, [])
 
   const signIn = async (email, password) => {
-    if (!supabase) throw new Error(initErr || 'Supabase not configured')
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) throw error
-    return data
+    const res = await auth.signIn(email, password)
+    setUser(res.user)
+    setProfile(res.profile)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ user: res.user, profile: res.profile }))
+    return res
   }
 
   const signOut = async () => {
-    if (!supabase) return
-    const { error } = await supabase.auth.signOut()
-    if (error) throw error
+    setUser(null)
+    setProfile(null)
+    localStorage.removeItem(STORAGE_KEY)
   }
 
   return (
     <AuthContext.Provider value={{
       user, profile, loading, signIn, signOut,
-      supabaseMissing,
-      initError: initErr,
-      hasClient: !!supabase,
+      supabaseMissing: false,
+      initError: null,
+      hasClient: true,
     }}>
       {children}
     </AuthContext.Provider>

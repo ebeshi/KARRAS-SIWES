@@ -60,7 +60,7 @@ const PEOPLE = [
 ]
 
 export default function Login() {
-  const { signIn, profile, loading, supabaseMissing, hasClient, initError } = useAuth()
+  const { signIn, profile, loading } = useAuth()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -76,10 +76,6 @@ export default function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!hasClient) {
-      setError('Configure Supabase first — see banner above.')
-      return
-    }
     setError(null)
     setSubmitting(true)
     try {
@@ -111,12 +107,6 @@ export default function Login() {
         </div>
         <div className="card">
           <h2>Sign in</h2>
-          {supabaseMissing && (
-            <div className="error">
-              Supabase not configured yet. Add your project env vars to <code>.env</code> and restart the dev server before you can sign in.
-              {initError && <div style={{ marginTop: 6, fontSize: '0.85rem' }}>{initError}</div>}
-            </div>
-          )}
           {error && <div className="error">{error}</div>}
           <form onSubmit={handleSubmit}>
             <div className="field">
@@ -128,7 +118,6 @@ export default function Login() {
                 autoComplete="email"
                 autoCapitalize="none"
                 required
-                disabled={!hasClient}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@university.ng"
@@ -142,14 +131,13 @@ export default function Login() {
                 className="input"
                 autoComplete="current-password"
                 required
-                disabled={!hasClient}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
               />
             </div>
-            <button type="submit" className="btn btn-block" disabled={showSpinner || !hasClient}>
-              {!hasClient ? 'Waiting for Supabase…' : showSpinner ? 'Signing in…' : 'Sign in'}
+            <button type="submit" className="btn btn-block" disabled={showSpinner}>
+              {showSpinner ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
 

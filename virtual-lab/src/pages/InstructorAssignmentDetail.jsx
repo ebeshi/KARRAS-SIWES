@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-import { supabase } from '../lib/supabase.js'
 import { buildAssignmentGradeCsv, downloadCsv } from '../lib/csv.js'
 
 export default function InstructorAssignmentDetail() {
@@ -16,49 +15,8 @@ export default function InstructorAssignmentDetail() {
 
   useEffect(() => {
     if (!id || !profile) return
-    let cancelled = false
-    const load = async () => {
-      setLoading(true)
-      setLoadErr(null)
-      try {
-        const { data: asgn, error: aErr } = await supabase
-          .from('assignments')
-          .select('id, title, description, expected_output, manual_pdf_url, deadline, created_at, instructor_id, total_points')
-          .eq('id', id)
-          .single()
-        if (aErr) throw aErr
-        if (asgn.instructor_id !== profile.id) throw new Error('Not authorized')
-        if (!cancelled) setAssignment(asgn)
-
-        const { data: subs, error: sErr } = await supabase
-          .from('submissions')
-          .select(`
-            id, student_id, submitted_at, grade, status, auto_passed,
-            users!submissions_student_id_fkey(id, full_name, email, matric_no, faculty, department, level)
-          `)
-          .eq('assignment_id', id)
-          .order('submitted_at', { ascending: true })
-        if (sErr) throw sErr
-
-        const { data: enr, error: eErr } = await supabase
-          .from('assignment_enrollments')
-          .select(`student_id, users!assignment_enrollments_student_id_fkey(id, full_name, email, matric_no, faculty, department, level)`)
-          .eq('assignment_id', id)
-        if (eErr && eErr.code !== '42P01') console.warn(eErr)
-
-        if (!cancelled) {
-          setSubmissions(subs || [])
-          setEnrolled(enr || [])
-        }
-      } catch (err) {
-        console.error(err)
-        if (!cancelled) setLoadErr(err.message || 'Could not load')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
-    return () => { cancelled = true }
+    setLoading(false)
+    setLoadErr('Standalone assignments are migrated to Lab Manuals.')
   }, [id, profile])
 
   const gradeRows = useMemo(() => {

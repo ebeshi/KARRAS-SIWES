@@ -1,7 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useEffect, useState } from 'react'
-import { supabase } from '../lib/supabase.js'
+import { uploadPdf } from '../lib/api.js'
 import {
   listManualsForInstructor, createManual, upsertTasksForManual,
   deleteManual,
@@ -52,25 +52,13 @@ export default function InstructorDashboard() {
   const [importing, setImporting] = useState(false)
   const [deletingId, setDeletingId] = useState(null)
 
-  const supabaseStorageUrl = `${import.meta.env.VITE_SUPABASE_URL.replace(/\/$/, '')}/storage/v1/object/public/manuals`
-
   const refresh = async () => {
     if (!profile) return
     setLoading(true)
     try {
-      const [ms, as] = await Promise.all([
-        listManualsForInstructor(profile.id),
-        supabase
-          .from('assignments')
-          .select(`id, title, description, deadline, created_at, manual_pdf_url, submissions (id)`)
-          .eq('instructor_id', profile.id)
-          .order('created_at', { ascending: false }),
-      ])
+      const ms = await listManualsForInstructor(profile.id)
       setManuals(ms)
-      setAssignments((as?.data || []).map((a) => ({
-        ...a,
-        submission_count: (a.submissions || []).length,
-      })))
+      setAssignments([])
     } catch (err) {
       console.error(err)
       setFormError(err.message || 'Could not load dashboard')
@@ -84,7 +72,7 @@ export default function InstructorDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id])
 
-  const uploadPdf = async (file) => {
+  const handlePdfUpload = async (file) => {
     if (!file) return null
     if (file.type && file.type !== 'application/pdf') {
       throw new Error('Manual must be a PDF file.')
@@ -92,13 +80,7 @@ export default function InstructorDashboard() {
     if (file.size > 20 * 1024 * 1024) {
       throw new Error('Manual PDF must be under 20MB.')
     }
-    const safeSlug = (mTitle.trim() || courseCode.trim() || 'manual').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 40) || 'manual'
-    const path = `${Date.now()}-${safeSlug}-${Math.random().toString(36).slice(2, 8)}.pdf`
-    const { error: upErr } = await supabase.storage
-      .from('manuals')
-      .upload(path, file, { cacheControl: '3600', upsert: false, contentType: 'application/pdf' })
-    if (upErr) throw new Error(`PDF upload failed: ${upErr.message || String(upErr)}`)
-    return `${supabaseStorageUrl}/${path}`
+    return await uploadPdf(file)
   }
 
   const handleCreateManual = async (e) => {
@@ -136,31 +118,7 @@ export default function InstructorDashboard() {
 
   const handleCreateAssignment = async (e) => {
     e.preventDefault()
-    if (!profile) return
-    setSaving(true)
-    setFormError(null)
-    setFormSuccess(false)
-    try {
-      if (!title.trim()) throw new Error('Title is required')
-      if (!deadline) throw new Error('Deadline is required')
-      const url = manualPdfFile ? await uploadPdf(manualPdfFile) : null
-      await supabase.from('assignments').insert({
-        instructor_id: profile.id,
-        title: title.trim(),
-        description: description.trim(),
-        expected_output: expectedOutput.trim() || null,
-        manual_pdf_url: url,
-        deadline: new Date(deadline).toISOString(),
-      })
-      setTitle(''); setDescription(''); setExpectedOutput(''); setDeadline(''); setManualPdfFile(null)
-      if (document.getElementById('manual_pdf')) document.getElementById('manual_pdf').value = ''
-      setFormSuccess('Assignment created.')
-      await refresh()
-    } catch (err) {
-      setFormError(err.message || 'Could not create assignment')
-    } finally {
-      setSaving(false)
-    }
+    setFormError('Standalone assignments are migrated to Manual tasks. Please create a Lab Manual.')
   }
 
   const runImport = async () => {
@@ -217,12 +175,6 @@ export default function InstructorDashboard() {
     if (!ok) return
     setDeletingId(m.id)
     try {
-      if (m.manual_pdf_url) {
-        const path = m.manual_pdf_url.split('/object/public/manuals/').pop()
-        if (path) {
-          try { await supabase.storage.from('manuals').remove([path]) } catch (_) {}
-        }
-      }
       await deleteManual(m.id)
       await refresh()
     } catch (err) {

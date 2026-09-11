@@ -1,12 +1,10 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../lib/supabase.js'
 import { enrollInManual, listManualsForStudent } from '../lib/manualsQueries.js'
 
 const TABS = [
   { key: 'manuals', label: 'My Lab Manuals' },
-  { key: 'assignments', label: 'Standalone Assignments' },
 ]
 
 const statusBadge = (status) => {
@@ -34,25 +32,9 @@ export default function StudentDashboard() {
     const load = async () => {
       setLoading(true); setErr(null)
       try {
-        const [ms, asgns, subs] = await Promise.all([
-          listManualsForStudent(profile.id),
-          supabase
-            .from('assignments')
-            .select('id, title, description, deadline, created_at, manual_pdf_url, users!assignments_instructor_id_fkey(full_name)')
-            .order('deadline', { ascending: false }),
-          supabase
-            .from('submissions')
-            .select('assignment_id, status')
-            .eq('student_id', profile.id),
-        ])
+        const ms = await listManualsForStudent(profile.id)
         setManuals(ms)
-        const subMap = {}
-        for (const s of subs?.data || []) subMap[s.assignment_id] = s.status
-        const now = new Date()
-        setAssignments((asgns?.data || []).map((a) => {
-          const status = subMap[a.id] || 'not_started'
-          return { ...a, status, past: new Date(a.deadline) < now }
-        }))
+        setAssignments([])
       } catch (e) {
         console.error(e)
         setErr(e.message || String(e))
@@ -61,7 +43,7 @@ export default function StudentDashboard() {
       }
     }
     load()
-  }, [profile])
+  }, [profile?.id])
 
   const handleEnroll = async (m) => {
     if (enrolling) return

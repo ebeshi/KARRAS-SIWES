@@ -10,29 +10,9 @@ import PyodideTest from './pages/PyodideTest.jsx'
 import ProtectedRoute from './components/ProtectedRoute.jsx'
 import { AuthProvider, useAuth } from './context/AuthContext.jsx'
 
-function SetupBanner() {
-  const { supabaseMissing, initError } = useAuth()
-  if (!supabaseMissing) return null
-  return (
-    <div style={{
-      background: 'rgba(251, 191, 36, 0.06)',
-      color: '#fde68a',
-      borderBottom: '1px solid rgba(251, 191, 36, 0.18)',
-      padding: '12px 16px',
-      fontSize: '0.9rem',
-    }}>
-      <strong>Supabase not configured.</strong> {initError}
-      <div style={{ marginTop: 4, opacity: 0.85 }}>
-        Edit <code>.env</code>, then restart the dev server.
-      </div>
-    </div>
-  )
-}
-
 function Shell() {
   return (
     <div className="app">
-      <SetupBanner />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/pyodide-test" element={<PyodideTest />} />

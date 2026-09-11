@@ -4,13 +4,16 @@
   "version": "0.0.0",
   "type": "module",
   "workspaces": [
-    "virtual-lab"
+    "virtual-lab",
+    "server"
   ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "dev": "npm --prefix virtual-lab run dev",
+    "server": "npm --prefix server run dev",
+    "dev:frontend": "npm --prefix virtual-lab run dev",
+    "dev": "node -e \"const { spawn } = require('child_process'); spawn('npm', ['--prefix', 'server', 'run', 'dev'], { stdio: 'inherit', shell: true }); spawn('npm', ['--prefix', 'virtual-lab', 'run', 'dev'], { stdio: 'inherit', shell: true });\"",
     "build": "npm --prefix virtual-lab run build",
     "preview": "npm --prefix virtual-lab run preview"
   }
