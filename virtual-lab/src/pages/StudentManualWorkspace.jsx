@@ -35,7 +35,8 @@ export default function StudentManualWorkspace() {
   const [tasks, setTasks] = useState([])
   const [taskIdx, setTaskIdx] = useState(0)
   const [subMap, setSubMap] = useState({})
-  const [tab, setTab] = useState('manual')
+  const [pane, setPane] = useState('manual')
+  const [showExpected, setShowExpected] = useState(false)
 
   const [code, setCode] = useState('')
   const [running, setRunning] = useState(false)
@@ -88,6 +89,7 @@ export default function StudentManualWorkspace() {
     setRunOutput('')
     setRunResult(null)
     setAutoPass(null)
+    setShowExpected(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id])
 
@@ -131,7 +133,7 @@ export default function StudentManualWorkspace() {
   }, [tasks, subMap, taskIdx])
 
   const setPageJump = (start, end) => {
-    setTab('manual')
+    setPane('manual')
     if (!manual?.manual_pdf_url) return
     setPdfUrl(pageParam(manual.manual_pdf_url, start, end))
   }
@@ -270,12 +272,13 @@ export default function StudentManualWorkspace() {
         <div className="progress-bar"><div className="progress-fill" style={{ width: overallPct + '%' }} /></div>
       </div>
 
+      <div className="workspace-mobile-tabs mobile-only">
+        <button className={'tab sm' + (pane === 'manual' ? ' tab-active' : '')} onClick={() => setPane('manual')}>📖 Manual</button>
+        <button className={'tab sm' + (pane === 'task' ? ' tab-active' : '')} onClick={() => setPane('task')}>💻 Task</button>
+      </div>
+
       <div className="workspace-body">
-        <div className={'workspace-pane pane-manual' + (tab === 'manual' ? ' pane-active' : '')}>
-          <div className="pane-tabs mobile-only">
-            <button className={'tab sm' + (tab === 'manual' ? ' tab-active' : '')} onClick={() => setTab('manual')}>📖 Manual</button>
-            <button className={'tab sm' + (tab === 'task' ? ' tab-active' : '')} onClick={() => setTab('task')}>💻 Task</button>
-          </div>
+        <div className={'workspace-pane pane-manual' + (pane === 'manual' ? ' pane-active' : '')}>
           <div className="pane-header desktop-only">
             <div className="row">
               <h2 className="mb-0">Manual</h2>
@@ -354,7 +357,7 @@ export default function StudentManualWorkspace() {
           )}
         </div>
 
-        <div className={'workspace-pane pane-task' + (tab === 'task' ? ' pane-active' : '')}>
+        <div className={'workspace-pane pane-task' + (pane === 'task' ? ' pane-active' : '')}>
           <div className="task-stepper">
             {tasks.map((t, idx) => {
               const s = subMap[t.id]
@@ -418,7 +421,8 @@ export default function StudentManualWorkspace() {
 
               <div style={{ height: 14 }} />
 
-              <div className="row" style={{ alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div className="task-actions">
+                <div className="row" style={{ alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <button className="btn btn-sm" onClick={doRun} disabled={running}>
                   {running ? 'Running…' : '▶ Run'}
                 </button>
@@ -428,6 +432,7 @@ export default function StudentManualWorkspace() {
                     setRunOutput('')
                     setRunResult(null)
                     setAutoPass(null)
+                    setShowExpected(false)
                   }
                 }}>Reset starter</button>
                 <span className="small muted">Auto-saves draft as you type.</span>
@@ -435,6 +440,7 @@ export default function StudentManualWorkspace() {
                   <button className="btn btn-sm" onClick={doSubmit} disabled={saving}>
                     {saving ? 'Submitting…' : 'Submit for grading'}
                   </button>
+                </div>
                 </div>
               </div>
 
@@ -444,7 +450,7 @@ export default function StudentManualWorkspace() {
                 onChange={setCode}
                 language={task.language === 'javascript' ? 'javascript' : 'python'}
                 mobile={true}
-                height="52vh"
+                height="60dvh"
               />
 
               <div style={{ height: 14 }} />
@@ -456,12 +462,12 @@ export default function StudentManualWorkspace() {
                   </span>
                 )}
                 {task.expected_output && (
-                  <button className="btn btn-ghost btn-sm" onClick={() => setTab('expected')}>
-                    Show expected output
+                  <button className="btn btn-ghost btn-sm" onClick={() => setShowExpected((v) => !v)}>
+                    {showExpected ? 'Hide expected output' : 'Show expected output'}
                   </button>
                 )}
               </div>
-              {tab === 'expected' && task.expected_output && (
+              {showExpected && task.expected_output && (
                 <pre className="code-block code-block-expected" style={{ marginTop: 10 }}>{task.expected_output}</pre>
               )}
               <pre className="code-block" style={{ minHeight: 80, marginTop: 10 }}>
