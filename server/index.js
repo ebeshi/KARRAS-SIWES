@@ -118,6 +118,13 @@ app.get('/api/instructor/manuals', async (req, res) => {
   }
 })
 
+function formatMySQLDate(val) {
+  if (!val) return null
+  const d = new Date(val)
+  if (isNaN(d.getTime())) return null
+  return d.toISOString().slice(0, 19).replace('T', ' ')
+}
+
 app.post('/api/instructor/manuals', async (req, res) => {
   try {
     const { id, instructor_id, course_code, title, description, semester, manual_pdf_url, deadline, published, import_batch_id } = req.body
@@ -134,7 +141,7 @@ app.post('/api/instructor/manuals', async (req, res) => {
         description || '',
         semester || null,
         manual_pdf_url || null,
-        deadline,
+        formatMySQLDate(deadline),
         published ? 1 : 0,
         import_batch_id || null
       ]
@@ -150,9 +157,13 @@ app.post('/api/instructor/manuals', async (req, res) => {
 app.put('/api/instructor/manuals/:id', async (req, res) => {
   try {
     const manualId = req.params.id
-    const fields = req.body
-    const keys = Object.keys(fields).filter(k => k !== 'id')
+    const fields = { ...req.body }
+    if (fields.deadline) {
+      fields.deadline = formatMySQLDate(fields.deadline)
+    }
+    delete fields.id
     
+    const keys = Object.keys(fields)
     if (keys.length === 0) return res.json({ success: true })
 
     const setClause = keys.map(k => `\`${k}\` = ?`).join(', ')
@@ -397,7 +408,7 @@ app.post('/api/student/submissions', async (req, res) => {
         manual_id,
         code || '',
         draft_code || null,
-        submitted_at || null,
+        formatMySQLDate(submitted_at),
         typeof auto_passed === 'boolean' ? (auto_passed ? 1 : 0) : null,
         run_output || null,
         typeof grade === 'number' ? grade : null,

@@ -46,6 +46,7 @@ export default function InstructorDashboard() {
   const [importOpen, setImportOpen] = useState(false)
   const [importMode, setImportMode] = useState('json')
   const [importText, setImportText] = useState(() => JSON.stringify(SAMPLE_IMPORT, null, 2))
+  const [loadedFileName, setLoadedFileName] = useState(null)
   const [importPdf, setImportPdf] = useState(null)
   const [importError, setImportError] = useState(null)
   const [importResult, setImportResult] = useState(null)
@@ -455,16 +456,35 @@ export default function InstructorDashboard() {
                 {importError && <div className="error" style={{ whiteSpace: 'pre-wrap' }}>{importError}</div>}
                 {importResult && <div className="success">Imported &quot;{importResult.manual.course_code} — {importResult.manual.title}&quot; with {importResult.tasksCount} tasks.</div>}
                 <div className="field" style={{ marginTop: 4 }}>
-                  <label className="label" htmlFor="import_json">
-                    Paste or upload your manual + tasks JSON
-                    <span className="small muted" style={{ marginLeft: 8 }}>(template below — replace the values)</span>
-                  </label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label className="label" htmlFor="import_json" style={{ margin: 0 }}>
+                      Paste or upload your manual + tasks JSON
+                    </label>
+                    {loadedFileName && (
+                      <span className="badge badge-submitted" style={{ fontSize: 11 }}>
+                        📄 Loaded: {loadedFileName}
+                      </span>
+                    )}
+                  </div>
                   <textarea
                     id="import_json"
                     className="textarea"
-                    style={{ minHeight: 320, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 13, lineHeight: 1.5 }}
+                    style={{ minHeight: 320, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 13, lineHeight: 1.5, marginTop: 6 }}
                     value={importText}
-                    onChange={(e) => setImportText(e.target.value)}
+                    onChange={(e) => {
+                      setImportText(e.target.value)
+                      setLoadedFileName(null)
+                    }}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={async (e) => {
+                      e.preventDefault()
+                      const f = e.dataTransfer.files?.[0]
+                      if (f && (f.type.includes('json') || f.name.endsWith('.json') || f.type.includes('text'))) {
+                        const text = await f.text()
+                        setImportText(text)
+                        setLoadedFileName(f.name)
+                      }
+                    }}
                     spellCheck={false}
                   />
                 </div>
@@ -492,9 +512,9 @@ export default function InstructorDashboard() {
 
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', flexWrap: 'wrap', marginTop: 12 }}>
                   <div style={{ display: 'flex', gap: 10 }}>
-                    <button className="btn btn-secondary btn-sm" onClick={() => setImportText(JSON.stringify(SAMPLE_IMPORT, null, 2))}>Restore template</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => { setImportText(JSON.stringify(SAMPLE_IMPORT, null, 2)); setLoadedFileName(null); }}>Restore Pygame template</button>
                     <label className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }}>
-                      Load JSON file
+                      📂 Load JSON file
                       <input
                         type="file"
                         accept="application/json,.json,text/plain"
@@ -504,12 +524,14 @@ export default function InstructorDashboard() {
                           if (!f) return
                           const text = await f.text()
                           setImportText(text)
+                          setLoadedFileName(f.name)
+                          e.target.value = ''
                         }}
                       />
                     </label>
                   </div>
                   <div style={{ display: 'flex', gap: 10 }}>
-                    <button className="btn btn-secondary btn-sm" onClick={() => { setImportOpen(false); setImportError(null); setImportPdf(null) }}>Cancel</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => { setImportOpen(false); setImportError(null); setImportPdf(null); setLoadedFileName(null); }}>Cancel</button>
                     <button className="btn btn-sm" onClick={runImport} disabled={importing}>{importing ? 'Importing…' : 'Validate + import'}</button>
                   </div>
                 </div>
