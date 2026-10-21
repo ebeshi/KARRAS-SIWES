@@ -367,19 +367,71 @@ export const getManualProgressRows = async (manualId, tasks) => {
       .in('id', studentIds))
     : []
   const profileById = new Map(profiles.map((profile) => [profile.id, profile]))
-
-  return {
-    manual,
-    submissions: submissionRows.map((row) => ({
-      ...row,
-      ...Object.fromEntries(Object.entries(profileById.get(row.student_id) || {}).map(([key, value]) => [`student_${key}`, value])),
-      student_profile_id: row.student_id,
-    })),
-    enrollments: enrollmentRows.map((row) => ({
-      ...Object.fromEntries(Object.entries(profileById.get(row.student_id) || {}).map(([key, value]) => [`student_${key}`, value])),
-      student_profile_id: row.student_id,
-    })),
+  const students = new Map()
+  const addStudent = (studentId) => {
+    if (students.has(studentId)) return students.get(studentId)
+    const profile = profileById.get(studentId) || {}
+    const row = {
+      studentId,
+      email: profile.email || '',
+      fullName: profile.full_name || '',
+      matricNo: profile.matric_no || '',
+      faculty: profile.faculty || '',
+      department: profile.department || '',
+      level: profile.level || '',
+      taskStatuses: {},
+    }
+    students.set(studentId, row)
+    return row
   }
+
+  for (const enrollment of enrollmentRows) {
+    addStudent(enrollment.student_id)
+  }
+  for (const submission of submissionRows) {
+    const row = addStudent(submission.student_id)
+    row.taskStatuses[submission.task_id] = {
+      status: submission.status,
+      auto_passed: submission.auto_passed === true,
+      submitted_at: submission.submitted_at,
+    }
+  }
+
+  const deadlineValue = typeof manual.deadline === 'string' && !manual.deadline.includes('T')
+    ? `${manual.deadline.replace(' ', 'T')}Z`
+    : manual.deadline
+  const deadline = new Date(deadlineValue).getTime()
+  const deadlinePassed = Number.isFinite(deadline) && deadline <= Date.now()
+
+  return Array.from(students.values()).map((row) => {
+    const completedTasks = tasks.reduce((count, task) => {
+      const submission = row.taskStatuses[task.id]
+      return count + (
+        submission?.auto_passed === true
+        && ['submitted', 'graded'].includes(submission.status)
+          ? 1
+          : 0
+      )
+    }, 0)
+    const totalTasks = tasks.length
+    const isCompleted = totalTasks > 0 && completedTasks === totalTasks
+    const hasStarted = Object.values(row.taskStatuses).some((submission) => (
+      ['in_progress', 'submitted', 'graded'].includes(submission.status)
+    ))
+    let statusLabel = 'Not started'
+    if (isCompleted) statusLabel = 'Completed'
+    else if (deadlinePassed) statusLabel = 'Incomplete (deadline elapsed)'
+    else if (hasStarted) statusLabel = 'In progress'
+
+    return {
+      ...row,
+      completedTasks,
+      totalTasks,
+      isCompleted,
+      score: isCompleted ? 40 : 0,
+      statusLabel,
+    }
+  }).sort((a, b) => a.fullName.localeCompare(b.fullName))
 }
 
 export const listManualsForStudent = async () => {
