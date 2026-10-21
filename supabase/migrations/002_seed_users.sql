@@ -1,2 +1,0 @@
--- Deprecated. Demo users are no longer seeded; create accounts through registration.
--- Migration 013_remove_seeded_accounts.sql removes accounts created by older versions.

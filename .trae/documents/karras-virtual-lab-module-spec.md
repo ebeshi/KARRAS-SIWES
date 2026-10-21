@@ -35,6 +35,14 @@ Many institutions need to run practical coding education, but:
 - students may only have smartphones or unreliable personal devices
 - departments may not have functioning computer labs
 - institutions may lack the infrastructure to run, manage, and grade coding assignments consistently
+grading is a mess
+thrid party tools are expensive
+one workflow
+manual availability
+manual prices
+queues
+grading problems
+practical sheduling
 
 This creates a gap between the curriculum and the institution's ability to actually deliver practical programming work.
 

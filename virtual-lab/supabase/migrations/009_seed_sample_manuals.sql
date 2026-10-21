@@ -1,1 +1,0 @@
--- Deprecated. Sample manuals are no longer seeded; create manuals through the instructor dashboard.

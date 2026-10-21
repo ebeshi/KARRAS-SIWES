@@ -34,11 +34,9 @@ designed to be public; database access is controlled by Row Level Security.
 
 ### Fresh Supabase project
 
-1. In the Supabase Dashboard, open **SQL Editor** and run the migration files in numeric
-   order from `001_init.sql` through `015_supabase_production_setup.sql`. Use only one
-   copy of each migration; the files are mirrored in these locations:
-- `supabase/migrations/`
-- `virtual-lab/supabase/migrations/`
+1. In the Supabase Dashboard, open **SQL Editor**, paste all of
+   [`supabase/schema.sql`](./supabase/schema.sql), and run it once. This is the consolidated
+   PostgreSQL setup for a fresh project and the only schema setup script in this repository.
 2. In **Authentication → URL Configuration**, set the Site URL to your Vercel URL and add
    the local development URL and your Vercel preview/production URLs to the allowed redirect
    URLs. Email confirmation can stay enabled; new users will be prompted to confirm before

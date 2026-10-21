@@ -1,2 +1,0 @@
--- Deprecated. Production profiles must be created through account registration.
--- Migration 013_remove_seeded_accounts.sql removes profiles created by older versions.

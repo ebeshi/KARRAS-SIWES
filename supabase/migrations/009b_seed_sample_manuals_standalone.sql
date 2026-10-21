@@ -1,2 +1,0 @@
--- Deprecated. This legacy script created a demo instructor when no account existed.
--- Create manuals through the instructor dashboard instead.
