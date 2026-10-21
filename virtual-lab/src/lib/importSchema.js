@@ -1,4 +1,6 @@
-const LANGS = new Set(['python', 'javascript', 'js', 'py'])
+import { normalizeTaskLanguage, TASK_LANGUAGES } from './languages.js'
+
+const LANGS = new Set([...TASK_LANGUAGES.map(({ value }) => value), 'js', 'py', 'c++'])
 
 export const validateManualImport = (raw) => {
   if (!raw || typeof raw !== 'object') return fail('JSON payload must be an object')
@@ -47,9 +49,11 @@ export const validateManualImport = (raw) => {
       pdf_section_label: t.pdf_section_label ? String(t.pdf_section_label).trim() : null,
       pdf_page_start: typeof t.pdf_page_start === 'number' ? t.pdf_page_start : null,
       pdf_page_end: typeof t.pdf_page_end === 'number' ? t.pdf_page_end : null,
-      language: LANGS.has(t.language) ? t.language : 'python',
+      language: normalizeTaskLanguage(t.language),
       starter_code: String(t.starter_code || ''),
-      expected_output: t.expected_output ? String(t.expected_output) : null,
+      expected_output: ['html', 'css'].includes(normalizeTaskLanguage(t.language))
+        ? null
+        : (t.expected_output ? String(t.expected_output) : null),
       points: typeof t.points === 'number' ? t.points : 10,
     }))
     .sort((a, b) => a.order_index - b.order_index)

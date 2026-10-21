@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-import { uploadPdf, upsertTaskSubmission } from '../lib/api.js'
+import { uploadPdf } from '../lib/api.js'
 import {
   getManualDetailForInstructor, upsertTasksForManual, deleteTasksById,
   getManualProgressRows, updateManual,
 } from '../lib/manualsQueries.js'
 import { buildManualGradeCsv, downloadCsv } from '../lib/csv.js'
+import { normalizeTaskLanguage, TASK_LANGUAGES } from '../lib/languages.js'
 
 const DETAIL_TABS = [
   { key: 'tasks', label: 'Tasks' },
-  { key: 'progress', label: 'Progress & Grading' },
+  { key: 'progress', label: 'Progress & Results' },
   { key: 'settings', label: 'Manual settings' },
 ]
 
@@ -25,10 +26,17 @@ const emptyTask = (idx) => ({
   language: 'python',
   starter_code: '',
   expected_output: '',
-  points: 10,
   _new: true,
   _dirty: true,
 })
+
+const deadlineTime = (value) => {
+  if (!value) return NaN
+  const normalized = typeof value === 'string' && !value.includes('T')
+    ? `${value.replace(' ', 'T')}Z`
+    : value
+  return new Date(normalized).getTime()
+}
 
 export default function InstructorManualDetail() {
   const { id } = useParams()
@@ -54,7 +62,9 @@ export default function InstructorManualDetail() {
     try {
       const { manual: m, tasks: ts } = await getManualDetailForInstructor(id, profile.id)
       setManual(m)
-      setTasks(ts.length ? ts : [emptyTask(1)])
+      setTasks(ts.length
+        ? ts.map((task) => ({ ...task, language: normalizeTaskLanguage(task.language) }))
+        : [emptyTask(1)])
       setProgressRows(await getManualProgressRows(id, ts))
     } catch (e) {
       setErr(e.message || String(e))
@@ -64,6 +74,26 @@ export default function InstructorManualDetail() {
   }
 
   useEffect(() => { load() }, [id, profile?.id])
+
+  useEffect(() => {
+    if (!id || !manual?.deadline || !tasks.length) return
+    const deadline = deadlineTime(manual.deadline)
+    if (!Number.isFinite(deadline) || deadline <= Date.now()) return
+
+    let timer
+    const refreshAtDeadline = () => {
+      const remaining = deadline - Date.now()
+      if (remaining > 0) {
+        timer = window.setTimeout(refreshAtDeadline, Math.min(remaining, 2147483647))
+        return
+      }
+      getManualProgressRows(id, tasks)
+        .then(setProgressRows)
+        .catch((e) => setSaveMsg({ type: 'error', text: `Could not refresh deadline results: ${e.message || String(e)}` }))
+    }
+    timer = window.setTimeout(refreshAtDeadline, Math.min(deadline - Date.now(), 2147483647))
+    return () => window.clearTimeout(timer)
+  }, [id, manual?.deadline, tasks])
 
   const onChangeTask = (idx, patch) => {
     setTasks((prev) => prev.map((t, i) => i === idx ? { ...t, ...patch, _dirty: true } : t))
@@ -115,11 +145,13 @@ export default function InstructorManualDetail() {
           pdf_section_label: t.pdf_section_label ? String(t.pdf_section_label).trim() : null,
           pdf_page_start: typeof t.pdf_page_start === 'number' ? t.pdf_page_start : Number.isFinite(+t.pdf_page_start) ? +t.pdf_page_start : null,
           pdf_page_end: typeof t.pdf_page_end === 'number' ? t.pdf_page_end : Number.isFinite(+t.pdf_page_end) ? +t.pdf_page_end : null,
-          language: t.language === 'javascript' ? 'javascript' : 'python',
+          language: normalizeTaskLanguage(t.language),
           starter_code: String(t.starter_code || ''),
-          expected_output: t.expected_output ? String(t.expected_output) : null,
-          points: Number.isFinite(+t.points) ? Math.max(0, +t.points) : 10,
+          expected_output: ['html', 'css'].includes(t.language) ? null : (t.expected_output ? String(t.expected_output) : null),
         }))
+      if (normalized.some((task) => ['html', 'css'].includes(task.language) || !task.expected_output?.trim())) {
+        throw new Error('Every manual task needs an executable language and expected output so correct answers can be checked automatically.')
+      }
 
       const upserted = await upsertTasksForManual(manual.id, normalized)
       const refreshed = upserted.slice().sort((a, b) => a.order_index - b.order_index)
@@ -137,7 +169,7 @@ export default function InstructorManualDetail() {
   const exportCsv = () => {
     const { rows } = buildManualGradeCsv({ manual, tasks, rows: progressRows })
     const safeSlug = (manual?.course_code || 'manual').toLowerCase().replace(/[^a-z0-9]+/g, '-')
-    downloadCsv(rows, `${safeSlug}-grades-${new Date().toISOString().slice(0,10)}.csv`)
+    downloadCsv(rows, `${safeSlug}-results-${new Date().toISOString().slice(0,10)}.csv`)
   }
 
   const patchManual = async (patch) => {
@@ -174,9 +206,9 @@ export default function InstructorManualDetail() {
   const progressStats = useMemo(() => {
     const tasksCount = tasks.length
     const total = progressRows.length
-    const submittedStudents = progressRows.filter((r) => r.statusLabel !== 'Not started').length
-    const avg = total ? (progressRows.reduce((a, r) => a + r.pct, 0) / total).toFixed(1) : 0
-    return { tasksCount, total, submittedStudents, avg }
+    const completedStudents = progressRows.filter((r) => r.isCompleted).length
+    const avgScore = total ? (progressRows.reduce((sum, row) => sum + row.score, 0) / total).toFixed(1) : 0
+    return { tasksCount, total, completedStudents, avgScore }
   }, [progressRows, tasks])
 
   const karrasChip = (
@@ -208,7 +240,7 @@ export default function InstructorManualDetail() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <button className="btn btn-secondary btn-sm" onClick={exportCsv} disabled={!tasks.length || !progressRows.length}>
-            Export grades CSV
+            Export results CSV
           </button>
           {karrasChip}
         </div>
@@ -245,13 +277,15 @@ export default function InstructorManualDetail() {
               <div style={{ height: 16 }} />
               {tasks.map((t, idx) => (
                 <div key={t.id || `n-${idx}`} className="task-editor-card">
-                  <div className="row" style={{ alignItems: 'center' }}>
-                    <div className="task-order-pill">#{t.order_index || idx + 1}</div>
-                    <div className="field mb-0" style={{ flex: '1 1 auto', minWidth: 200 }}>
-                      <input className="input" placeholder="Task title (e.g. Task 2.1 Draw a rectangle)" value={t.title}
-                        onChange={(e) => onChangeTask(idx, { title: e.target.value })} />
+                  <div className="row" style={{ alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 200px' }}>
+                      <div className="task-order-pill">#{t.order_index || idx + 1}</div>
+                      <div className="field mb-0" style={{ flex: 1, minWidth: 120 }}>
+                        <input className="input" placeholder="Task title (e.g. Task 2.1 Draw a rectangle)" value={t.title}
+                          onChange={(e) => onChangeTask(idx, { title: e.target.value })} />
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0, marginLeft: 'auto' }}>
                       <button className="btn btn-ghost btn-sm" onClick={() => moveTask(idx, -1)} title="Move up" disabled={idx === 0}>↑</button>
                       <button className="btn btn-ghost btn-sm" onClick={() => moveTask(idx, +1)} title="Move down" disabled={idx === tasks.length - 1}>↓</button>
                       <button className="btn btn-ghost btn-sm" onClick={() => removeTask(idx)} title="Delete" style={{ color: 'var(--danger)' }}>✕</button>
@@ -263,13 +297,13 @@ export default function InstructorManualDetail() {
                       <input className="input" value={t.pdf_section_label || ''} placeholder="e.g. Section 2.1"
                         onChange={(e) => onChangeTask(idx, { pdf_section_label: e.target.value })} />
                     </div>
-                    <div className="field inline-field" style={{ alignItems: 'center' }}>
-                      <label>Page range</label>
-                      <div style={{ display: 'flex', gap: 8, flex: 1, justifyContent: 'flex-end' }}>
-                        <input type="number" className="input" placeholder="Start" style={{ maxWidth: 110 }}
+                    <div className="field">
+                      <label className="label">Page range in manual</label>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input type="number" className="input" placeholder="Start" style={{ flex: 1 }}
                           value={t.pdf_page_start ?? ''}
                           onChange={(e) => onChangeTask(idx, { pdf_page_start: e.target.value === '' ? null : +e.target.value })} />
-                        <input type="number" className="input" placeholder="End" style={{ maxWidth: 110 }}
+                        <input type="number" className="input" placeholder="End" style={{ flex: 1 }}
                           value={t.pdf_page_end ?? ''}
                           onChange={(e) => onChangeTask(idx, { pdf_page_end: e.target.value === '' ? null : +e.target.value })} />
                       </div>
@@ -277,14 +311,10 @@ export default function InstructorManualDetail() {
                     <div className="field">
                       <label className="label">Language</label>
                       <select className="input" value={t.language} onChange={(e) => onChangeTask(idx, { language: e.target.value })}>
-                        <option value="python">Python</option>
-                        <option value="javascript">JavaScript</option>
+                        {TASK_LANGUAGES.map(({ value, label }) => (
+                          <option key={value} value={value}>{label}</option>
+                        ))}
                       </select>
-                    </div>
-                    <div className="field">
-                      <label className="label">Points (weight)</label>
-                      <input type="number" className="input" min={0} value={t.points}
-                        onChange={(e) => onChangeTask(idx, { points: +e.target.value || 0 })} />
                     </div>
                   </div>
                   <div className="field">
@@ -301,9 +331,14 @@ export default function InstructorManualDetail() {
                         onChange={(e) => onChangeTask(idx, { starter_code: e.target.value })} />
                     </div>
                     <div className="field">
-                      <label className="label">Expected output (optional — for auto-check Run)</label>
+                      <label className="label">
+                        {['html', 'css'].includes(t.language)
+                          ? 'Visual preview tasks cannot be auto-checked'
+                          : 'Expected output (required for submission)'}
+                      </label>
                       <textarea className="textarea" style={{ minHeight: 130, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 13, lineHeight: 1.55 }}
-                        value={t.expected_output || ''}
+                        value={['html', 'css'].includes(t.language) ? '' : (t.expected_output || '')}
+                        disabled={['html', 'css'].includes(t.language)}
                         onChange={(e) => onChangeTask(idx, { expected_output: e.target.value })} />
                     </div>
                   </div>
@@ -321,26 +356,26 @@ export default function InstructorManualDetail() {
           <div className="card">
             <div className="row" style={{ alignItems: 'flex-start', flexWrap: 'wrap' }}>
               <div>
-                <h2 className="mb-0">Progress and grading</h2>
-                <div className="small muted">Every enrolled student × every task. Per-task grades are entered here; the CSV export sums them.</div>
+                <h2 className="mb-0">Progress and results</h2>
+                <div className="small muted">Each student receives one result: completed tasks out of total tasks, completion status, and a score out of 40.</div>
               </div>
               <button className="btn btn-sm" onClick={exportCsv} disabled={!tasks.length || !progressRows.length}>
-                Export grades CSV
+                Export results CSV
               </button>
             </div>
             <div style={{ height: 12 }} />
             <div className="stat-grid">
               <div className="stat-card"><div className="stat-label">Enrolled</div><div className="stat-value">{progressStats.total}</div></div>
-              <div className="stat-card"><div className="stat-label">Started</div><div className="stat-value">{progressStats.submittedStudents}</div></div>
+              <div className="stat-card"><div className="stat-label">Completed</div><div className="stat-value">{progressStats.completedStudents}</div></div>
               <div className="stat-card"><div className="stat-label">Tasks</div><div className="stat-value">{progressStats.tasksCount}</div></div>
-              <div className="stat-card"><div className="stat-label">Avg score</div><div className="stat-value">{progressStats.avg}%</div></div>
+              <div className="stat-card"><div className="stat-label">Avg score</div><div className="stat-value">{progressStats.avgScore}/40</div></div>
             </div>
             <div style={{ height: 16 }} />
             {!progressRows.length ? (
               <div className="empty">No student submissions yet. Enroll students and have them open the manual workspace to begin.</div>
             ) : (
               <div className="table-wrap">
-                <table className="table">
+                <table className="table grading-table">
                   <thead>
                     <tr>
                       <th>Matric No.</th>
@@ -348,13 +383,9 @@ export default function InstructorManualDetail() {
                       <th>Name</th>
                       <th>Email</th>
                       <th>Dept / Faculty</th>
-                      {tasks.map((t) => (
-                        <th key={t.id || t.order_index}>
-                          T{Number(t.order_index) || '?'}
-                        </th>
-                      ))}
-                      <th>Total</th>
-                      <th>%</th>
+                      <th>Tasks Completed</th>
+                      <th>Completed</th>
+                      <th>Score / 40</th>
                       <th>Status</th>
                     </tr>
                   </thead>
@@ -370,34 +401,9 @@ export default function InstructorManualDetail() {
                           {r.faculty && r.department ? ' · ' : ''}
                           {r.faculty ? r.faculty : ''}
                         </td>
-                        {tasks.map((t) => {
-                          const cell = r.taskGrades[t.id] || {}
-                          return (
-                            <td key={t.id || t.order_index}>
-                              <GradeCell
-                                initial={cell.grade}
-                                status={cell.status}
-                                onSave={async (g) => {
-                                  const grade = g === '' ? null : Number(g)
-                                  const status = (typeof grade === 'number') ? 'graded' : (cell.status || 'not_started')
-                                  const payload = {
-                                    task_id: t.id, student_id: r.studentId, manual_id: manual.id,
-                                    grade, status,
-                                  }
-                                  try {
-                                    await upsertTaskSubmission(payload)
-                                    const refreshed = await getManualProgressRows(id, tasks)
-                                    setProgressRows(refreshed)
-                                  } catch (e) {
-                                    alert('Grade save failed: ' + (e.message || String(e)))
-                                  }
-                                }}
-                              />
-                            </td>
-                          )
-                        })}
-                        <td>{r.total}/{r.possible}</td>
-                        <td>{r.pct}%</td>
+                        <td>{r.completedTasks}/{r.totalTasks}</td>
+                        <td>{r.isCompleted ? 'Yes' : 'No'}</td>
+                        <td>{r.score}/40</td>
                         <td>{r.statusLabel}</td>
                       </tr>
                     ))}
@@ -487,27 +493,6 @@ export default function InstructorManualDetail() {
           </div>
         )}
       </div>
-    </div>
-  )
-}
-
-function GradeCell({ initial, status, onSave }) {
-  const [val, setVal] = useState(initial ?? '')
-  const [dirty, setDirty] = useState(false)
-  useEffect(() => { setVal(initial ?? ''); setDirty(false) }, [initial])
-  const color = status === 'graded' ? 'var(--success)' : status === 'submitted' ? 'var(--warn)' : 'rgba(255,255,255,0.35)'
-  return (
-    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-      <input
-        className="input"
-        style={{ maxWidth: 64, padding: '4px 6px', borderColor: dirty ? color : 'rgba(255,255,255,0.12)' }}
-        inputMode="decimal"
-        value={val}
-        onChange={(e) => { setVal(e.target.value); setDirty(true) }}
-        onBlur={() => { if (dirty) onSave(val); setDirty(false) }}
-        onKeyDown={(e) => { if (e.key === 'Enter') { e.target.blur() } }}
-        placeholder="—"
-      />
     </div>
   )
 }

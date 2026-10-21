@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS public.tasks (
     language TEXT NOT NULL DEFAULT 'python',
     starter_code TEXT NOT NULL DEFAULT '',
     expected_output TEXT,
-    points INT NOT NULL DEFAULT 10,
+    points INT NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (manual_id, order_index)

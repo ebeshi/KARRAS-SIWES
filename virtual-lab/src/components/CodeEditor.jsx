@@ -8,10 +8,15 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import {
   indentOnInput, bracketMatching, foldGutter, foldKeymap,
-  syntaxHighlighting, defaultHighlightStyle,
+  syntaxHighlighting, defaultHighlightStyle, StreamLanguage,
 } from '@codemirror/language'
 import { javascript } from '@codemirror/lang-javascript'
 import { python } from '@codemirror/lang-python'
+import { cpp } from '@codemirror/lang-cpp'
+import { html } from '@codemirror/lang-html'
+import { css } from '@codemirror/lang-css'
+import { java } from '@codemirror/lang-java'
+import { csharp as csharpMode } from '@codemirror/legacy-modes/mode/clike'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from '@codemirror/autocomplete'
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
@@ -19,6 +24,12 @@ import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 const LANG_EXT = {
   javascript: () => javascript(),
   python: () => python(),
+  c: () => cpp(),
+  cpp: () => cpp(),
+  java: () => java(),
+  csharp: () => StreamLanguage.define(csharpMode),
+  html: () => html(),
+  css: () => css(),
   js: () => javascript(),
   py: () => python(),
 }

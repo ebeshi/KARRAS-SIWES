@@ -26,6 +26,14 @@ const triggerBlob = (blob, filename) => {
   }, 500)
 }
 
+const getDeadlineTime = (value) => {
+  if (!value) return NaN
+  const normalized = typeof value === 'string' && !value.includes('T')
+    ? `${value.replace(' ', 'T')}Z`
+    : value
+  return new Date(normalized).getTime()
+}
+
 export const buildManualGradeCsv = ({ manual, tasks, rows }) => {
   const header = [
     'Matric No.',
@@ -35,39 +43,31 @@ export const buildManualGradeCsv = ({ manual, tasks, rows }) => {
     'Student Email',
     'Student Name',
     'Student ID (UUID)',
-    ...tasks.map((t) => `Task ${t.order_index}: ${t.title || ''} (${t.points || 0})`),
-    'Total Earned',
-    'Total Possible',
-    'Score %',
-    'Status',
+    'Tasks Completed',
+    'Total Tasks',
+    'Completed',
+    'Score / 40',
+    'Submission Status',
   ]
-  const totalPossible = tasks.reduce((a, t) => a + (Number(t.points) || 0), 0)
+  const totalTasks = tasks.length
+  const deadline = getDeadlineTime(manual?.deadline)
+  const deadlinePassed = Number.isFinite(deadline) && deadline <= Date.now()
   const data = rows.map((r) => {
-    const earned = tasks.reduce((sum, t) => {
-      const cell = r.taskGrades[t.id]
-      const grade = typeof cell?.grade === 'number' ? cell.grade : 0
-      return sum + grade
-    }, 0)
-    const pct = totalPossible ? Number(((earned / totalPossible) * 100).toFixed(2)) : 0
+    const completedTasks = Number(r.completedTasks) || 0
+    const completed = totalTasks > 0 && completedTasks === totalTasks
     return [
       r.matricNo || '',
       r.level || '',
       r.faculty || '',
       r.department || '',
-      r.email,
-      r.fullName,
-      r.studentId,
-      ...tasks.map((t) => {
-        const cell = r.taskGrades[t.id]
-        if (!cell) return ''
-        const g = typeof cell.grade === 'number' ? cell.grade : ''
-        const s = cell.status || ''
-        return typeof g === 'number' ? `${g}${s ? ` (${s})` : ''}` : s
-      }),
-      earned,
-      totalPossible,
-      pct,
-      r.statusLabel,
+      r.email || '',
+      r.fullName || '',
+      r.studentId || '',
+      `${completedTasks}/${totalTasks}`,
+      totalTasks,
+      completed ? 'Yes' : 'No',
+      completed ? 40 : 0,
+      !completed && deadlinePassed ? 'Incomplete (deadline elapsed)' : r.statusLabel,
     ]
   })
   return { header, data, rows: [header, ...data] }

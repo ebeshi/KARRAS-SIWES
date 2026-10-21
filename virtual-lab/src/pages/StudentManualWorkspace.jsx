@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import {
@@ -7,8 +7,20 @@ import {
 } from '../lib/manualsQueries.js'
 import { runCode } from '../lib/runCode.js'
 import CodeEditor from '../components/CodeEditor.jsx'
+import { normalizeTaskLanguage, TASK_LANGUAGES } from '../lib/languages.js'
 
 const fmt = (iso) => { try { return new Date(iso).toLocaleString() } catch { return iso } }
+const deadlineTime = (value) => {
+  if (!value) return NaN
+  const normalized = typeof value === 'string' && !value.includes('T')
+    ? `${value.replace(' ', 'T')}Z`
+    : value
+  return new Date(normalized).getTime()
+}
+
+const isTaskCompleted = (submission) => (
+  Boolean(submission && (submission.auto_passed === 1 || submission.auto_passed === true) && ['submitted', 'graded'].includes(submission.status))
+)
 
 const pageParam = (url, start, end) => {
   if (!url) return null
@@ -18,10 +30,10 @@ const pageParam = (url, start, end) => {
   return url + sep + hash
 }
 
-const badgeFromStatus = (status) => {
-  if (status === 'graded') return <span className="badge badge-graded">Graded</span>
-  if (status === 'submitted') return <span className="badge badge-submitted">Submitted</span>
-  if (status === 'in_progress') return <span className="badge badge-notstarted">Draft</span>
+const badgeFromStatus = (submission) => {
+  if (isTaskCompleted(submission)) return <span className="badge badge-graded">✓ Completed</span>
+  if (submission?.status === 'submitted' || submission?.status === 'graded') return <span className="badge badge-notstarted">Not completed</span>
+  if (submission?.status === 'in_progress') return <span className="badge badge-notstarted">Draft</span>
   return <span className="badge badge-notstarted">Not started</span>
 }
 
@@ -35,18 +47,22 @@ export default function StudentManualWorkspace() {
   const [taskIdx, setTaskIdx] = useState(0)
   const [subMap, setSubMap] = useState({})
   const [pane, setPane] = useState('manual')
-  const [showExpected, setShowExpected] = useState(false)
+  const [topBarHidden, setTopBarHidden] = useState(false)
 
   const [code, setCode] = useState('')
+  const [runConfirmation, setRunConfirmation] = useState(null)
   const [running, setRunning] = useState(false)
   const [runOutput, setRunOutput] = useState('')
   const [runResult, setRunResult] = useState(null)
+  const [previewHtml, setPreviewHtml] = useState(null)
   const [autoPass, setAutoPass] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState(null)
   const [pdfUrl, setPdfUrl] = useState(null)
+  const [deadlineElapsed, setDeadlineElapsed] = useState(false)
 
   const autoSaveTimer = useRef(null)
+  const draftsRef = useRef({})
 
   useEffect(() => {
     if (!id || !profile) return
@@ -55,13 +71,16 @@ export default function StudentManualWorkspace() {
       try {
         const { manual: m, tasks: ts } = await getManualForStudentWorkspace(id)
         const subs = await listStudentSubmissionsForManual(m.id, profile.id)
+        for (const item of ts) {
+          draftsRef.current[item.id] = subs[item.id]?.draft_code || subs[item.id]?.code || item.starter_code || ''
+        }
         setManual(m)
         setTasks(ts)
         setSubMap(subs)
         setPdfUrl(m.manual_pdf_url || null)
         const firstUndone = ts.findIndex((t) => {
           const s = subs[t.id]
-          return !s || !['submitted', 'graded'].includes(s.status)
+          return !isTaskCompleted(s)
         })
         setTaskIdx(firstUndone === -1 ? Math.max(0, ts.length - 1) : firstUndone)
       } catch (e) {
@@ -74,62 +93,98 @@ export default function StudentManualWorkspace() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, profile?.id])
 
+  useEffect(() => {
+    const deadline = deadlineTime(manual?.deadline)
+    if (!Number.isFinite(deadline)) return
+    setDeadlineElapsed(false)
+    let timer
+    const updateDeadlineState = () => {
+      const remaining = deadline - Date.now()
+      if (remaining <= 0) {
+        setDeadlineElapsed(true)
+        return
+      }
+      timer = window.setTimeout(updateDeadlineState, Math.min(remaining, 2147483647))
+    }
+    updateDeadlineState()
+    return () => window.clearTimeout(timer)
+  }, [manual?.deadline])
+
   const task = tasks[taskIdx]
   const sub = task ? subMap[task?.id] : null
   const codeRef = useRef(code)
   codeRef.current = code
 
+  const saveDraft = async (targetTask, draftCode) => {
+    if (!targetTask || !manual || !profile || isTaskCompleted(subMap[targetTask.id])) return
+    const row = await upsertTaskSubmission({
+      task_id: targetTask.id,
+      student_id: profile.id,
+      manual_id: manual.id,
+      draft_code: draftCode,
+      code: draftCode,
+      auto_passed: null,
+      status: draftCode ? 'in_progress' : 'not_started',
+    })
+    setSubMap((prev) => ({ ...prev, [targetTask.id]: row }))
+  }
+
+  const selectTask = (nextIndex) => {
+    if (nextIndex < 0 || nextIndex >= tasks.length || nextIndex === taskIdx) return
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    if (task && !isTaskCompleted(subMap[task.id])) {
+      saveDraft(task, code).catch((e) => {
+        setSaveMsg({ type: 'error', text: `Could not save draft: ${e.message || String(e)}` })
+      })
+    }
+    const nextTask = tasks[nextIndex]
+    const nextCode = draftsRef.current[nextTask.id] ?? subMap[nextTask.id]?.draft_code ?? subMap[nextTask.id]?.code ?? nextTask.starter_code ?? ''
+    codeRef.current = nextCode
+    setCode(nextCode)
+    setTaskIdx(nextIndex)
+    setRunConfirmation(null)
+    setRunResult(null)
+    setAutoPass(null)
+  }
+
+  const handleCodeChange = (nextCode) => {
+    codeRef.current = nextCode
+    if (task) draftsRef.current[task.id] = nextCode
+    setCode(nextCode)
+    setRunConfirmation(null)
+    setRunResult(null)
+    setAutoPass(null)
+  }
+
   // Populate editor code when task/load changes: use submission.code → submission.draft_code → task.starter_code
   useEffect(() => {
     if (!task) return
     const s = subMap[task.id]
-    const initial = s?.code || s?.draft_code || task.starter_code || ''
+    const initial = draftsRef.current[task.id] ?? s?.draft_code ?? s?.code ?? task.starter_code ?? ''
     setCode(initial)
+    codeRef.current = initial
+    setRunConfirmation(null)
     setRunOutput('')
     setRunResult(null)
+    setPreviewHtml(null)
     setAutoPass(null)
-    setShowExpected(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id])
 
-  // Auto-save draft code debounce
+  // Debounce saves while editing. Task navigation flushes the pending save first.
   useEffect(() => {
     if (!task || !manual || !profile) return
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
+    const taskToSave = task
+    const codeToSave = code
     autoSaveTimer.current = setTimeout(() => {
-      saveDraftSilent()
+      saveDraft(taskToSave, codeToSave).catch((e) => {
+        setSaveMsg({ type: 'error', text: `Could not save draft: ${e.message || String(e)}` })
+      })
     }, 900)
     return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, task?.id])
-
-  const saveDraftSilent = async () => {
-    if (!task || !manual || !profile) return
-    try {
-      const payload = {
-        task_id: task.id,
-        student_id: profile.id,
-        manual_id: manual.id,
-        draft_code: codeRef.current || '',
-        code: subMap[task.id]?.code || codeRef.current || '',
-        status: subMap[task.id]?.status || (codeRef.current ? 'in_progress' : 'not_started'),
-      }
-      const row = await upsertTaskSubmission(payload)
-      setSubMap((prev) => ({ ...prev, [task.id]: row }))
-    } catch (e) {
-      // non-fatal for auto-save
-    }
-  }
-
-  const canGoNext = useMemo(() => {
-    if (taskIdx >= tasks.length - 1) return false
-    const prev = tasks[taskIdx]
-    if (!prev) return true
-    const s = subMap[prev.id]
-    if (!s) return false
-    // Progression lock: must have Run (auto_passed===true OR status submitted/graded OR at least code draft)
-    return !!s.code || ['submitted', 'graded', 'in_progress'].includes(s.status)
-  }, [tasks, subMap, taskIdx])
 
   const setPageJump = (start, end) => {
     setPane('manual')
@@ -138,32 +193,60 @@ export default function StudentManualWorkspace() {
   }
 
   const doRun = async () => {
-    if (!task || running) return
-    setRunning(true); setRunOutput('Running…'); setRunResult(null); setAutoPass(null)
+    if (!task || running || deadlineElapsed || isTaskCompleted(subMap[task.id])) return
+    if (!code.trim()) {
+      setRunConfirmation(null)
+      setAutoPass(false)
+      setRunOutput('Enter code before running this task.')
+      return
+    }
+    setRunConfirmation(null)
+    setRunning(true); setRunOutput('Running…'); setRunResult(null); setPreviewHtml(null); setAutoPass(null)
     try {
       const result = await runCode({
         code,
-        language: task.language === 'javascript' ? 'javascript' : 'python',
+        language: normalizeTaskLanguage(task.language),
         expectedOutput: task.expected_output || null,
         timeoutMs: 20000,
       })
       setRunResult(result)
+      setPreviewHtml(result.previewHtml || null)
       const rawOut = result.output || ''
       const displayOut = rawOut.trim() === ''
         ? (result.ok ? 'Ran successfully. (No output — use print() to see values.)' : '')
         : rawOut
       setRunOutput(displayOut)
       setAutoPass(result.passed)
+      const isPass = result.ok && result.passed === true
+      if (isPass) {
+        setRunConfirmation({ taskId: task.id, code, output: rawOut })
+      }
       if (typeof result.passed === 'boolean' || result.ok) {
         try {
           const row = await upsertTaskSubmission({
-            task_id: task.id, student_id: profile.id, manual_id: manual.id,
-            code, draft_code: code, run_output: rawOut,
-            auto_passed: typeof result.passed === 'boolean' ? result.passed : null,
-            status: subMap[task.id]?.status || (code ? 'in_progress' : 'not_started'),
+            task_id: task.id,
+            student_id: profile.id,
+            manual_id: manual.id,
+            code,
+            draft_code: code,
+            run_output: rawOut,
+            auto_passed: isPass ? true : (typeof result.passed === 'boolean' ? result.passed : null),
+            status: isPass ? 'submitted' : (code ? 'in_progress' : 'not_started'),
+            submitted_at: isPass ? new Date().toISOString() : undefined,
           })
-          setSubMap((prev) => ({ ...prev, [task.id]: row }))
-        } catch (_) {}
+          const updatedRow = {
+            ...row,
+            auto_passed: isPass ? true : (row?.auto_passed === 1 || row?.auto_passed === true),
+            status: isPass ? 'submitted' : (row?.status || 'in_progress'),
+          }
+          setSubMap((prev) => ({ ...prev, [task.id]: updatedRow }))
+          if (isPass) {
+            setSaveMsg({ type: 'success', text: `Task ${task.order_index} passed and completed! ✓` })
+            setTimeout(() => setSaveMsg(null), 3000)
+          }
+        } catch (e) {
+          setSaveMsg({ type: 'error', text: `Could not save run result: ${e.message || String(e)}` })
+        }
       }
     } catch (e) {
       setRunOutput('[run failed] ' + (e.message || String(e)))
@@ -174,56 +257,44 @@ export default function StudentManualWorkspace() {
 
   const doSubmit = async () => {
     if (!task || !profile || !manual) return
+    if (deadlineElapsed) {
+      setSaveMsg({ type: 'error', text: 'The submission deadline has passed.' })
+      return
+    }
+    if (!code.trim()) {
+      setSaveMsg({ type: 'error', text: 'Enter an answer before submitting.' })
+      return
+    }
+    if (!task.expected_output?.trim() || ['html', 'css'].includes(task.language)) {
+      setSaveMsg({ type: 'error', text: 'This task cannot be auto-checked yet. Ask your lecturer to add an expected output and use an executable language.' })
+      return
+    }
+    if (isTaskCompleted(subMap[task.id])) return
+    if (runConfirmation?.taskId !== task.id || runConfirmation.code !== code) {
+      setSaveMsg({ type: 'error', text: 'Run this exact code and confirm it produces the correct output before submitting.' })
+      return
+    }
     setSaving(true); setSaveMsg(null)
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current)
     try {
-      let nextRunOutput = runOutput
-      let nextAutoPass = autoPass
-      let nextStatus = 'submitted'
-      let nextGrade = null
-
-      if (task.expected_output) {
-        const result = await runCode({
-          code,
-          language: task.language === 'javascript' ? 'javascript' : 'python',
-          expectedOutput: task.expected_output || null,
-          timeoutMs: 20000,
-        })
-        const rawOut = result.output || ''
-        const displayOut = rawOut.trim() === ''
-          ? (result.ok ? 'Ran successfully. (No output — use print() to see values.)' : '')
-          : rawOut
-        setRunResult(result)
-        setRunOutput(displayOut)
-        setAutoPass(result.passed)
-
-        nextRunOutput = rawOut
-        nextAutoPass = result.passed
-        if (result.passed === true) {
-          nextStatus = 'graded'
-          nextGrade = Number(task.points || 0)
-        } else if (result.passed === false) {
-          nextStatus = 'submitted'
-          nextGrade = 0
-        } else {
-          nextStatus = 'submitted'
-          nextGrade = null
-        }
-      }
-
       const row = await upsertTaskSubmission({
         task_id: task.id,
         student_id: profile.id,
         manual_id: manual.id,
         code,
         draft_code: code,
-        status: nextStatus,
-        run_output: nextRunOutput,
-        auto_passed: nextAutoPass,
-        grade: nextGrade,
+        status: 'submitted',
+        run_output: runConfirmation?.output || runOutput,
+        auto_passed: true,
         submitted_at: new Date().toISOString(),
       })
-      setSubMap((prev) => ({ ...prev, [task.id]: row }))
-      setSaveMsg({ type: 'success', text: `Task ${task.order_index} submitted.` })
+      const updatedRow = {
+        ...row,
+        auto_passed: true,
+        status: 'submitted',
+      }
+      setSubMap((prev) => ({ ...prev, [task.id]: updatedRow }))
+      setSaveMsg({ type: 'success', text: `Task ${task.order_index} completed! ✓` })
       setTimeout(() => setSaveMsg(null), 2500)
     } catch (e) {
       setSaveMsg({ type: 'error', text: e.message || String(e) })
@@ -243,33 +314,71 @@ export default function StudentManualWorkspace() {
   if (err) return <div className="page"><div className="card"><div className="error">{err}</div><Link to="/student" className="back-link">← Back</Link></div></div>
   if (!manual) return <div className="page"><div className="card"><p className="text-center mb-0">Manual not available.</p><Link to="/student" className="back-link">← Back</Link></div></div>
 
+  const completedTasks = tasks.filter((t) => isTaskCompleted(subMap[t.id])).length
+  const isCompleted = tasks.length > 0 && completedTasks === tasks.length
   const overallPct = tasks.length
-    ? Math.round(tasks.reduce((a, t) => a + (['submitted','graded'].includes(subMap[t.id]?.status) ? 1 : 0), 0) / tasks.length * 100)
+    ? Math.round(completedTasks / tasks.length * 100)
     : 0
 
   return (
-    <div className="workspace-root">
-      <div className="topbar workspace-topbar">
-        <div style={{ minWidth: 0 }}>
-          <Link to="/student" className="back-link" style={{ marginBottom: 8, display: 'inline-block' }}>← My manuals</Link>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span className="course-chip">{manual.course_code}</span>
-            <h1 style={{ margin: 0, fontSize: 20 }}>{manual.title}</h1>
+    <div className={`workspace-root${topBarHidden ? ' topbar-hidden' : ''}`}>
+      {!topBarHidden && (
+        <div className="topbar workspace-topbar">
+          <div id="workspace-manual-details" style={{ minWidth: 0 }}>
+            <Link to="/student" className="back-link" style={{ marginBottom: 8, display: 'inline-block' }}>← My manuals</Link>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span className="course-chip">{manual.course_code}</span>
+              <h1 style={{ margin: 0, fontSize: 20 }}>{manual.title}</h1>
+            </div>
+            <div className="subtitle" style={{ marginTop: 4 }}>
+              {manual.semester ? `${manual.semester} · ` : ''}
+              Due: {fmt(manual.deadline)}
+              <span style={{ marginLeft: 10 }}>{completedTasks}/{tasks.length} tasks completed</span>
+              <span style={{ marginLeft: 10 }}>
+                {isCompleted ? 'Completed · Score: 40/40' : deadlineElapsed ? 'Incomplete · Score: 0/40' : 'In progress'}
+              </span>
+            </div>
           </div>
-          <div className="subtitle" style={{ marginTop: 4 }}>
-            {manual.semester ? `${manual.semester} · ` : ''}
-            Due: {fmt(manual.deadline)}
-            <span style={{ marginLeft: 10 }}>{overallPct}% complete</span>
+          <div className="workspace-header-actions">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              title="Hide top bar to maximize PDF and workspace area"
+              onClick={() => setTopBarHidden(true)}
+            >
+              ▲ Hide top bar
+            </button>
+            {karrasChip}
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          {karrasChip}
-        </div>
-      </div>
+      )}
 
       <div className="workspace-progress-bar">
-        <div className="progress-bar"><div className="progress-fill" style={{ width: overallPct + '%' }} /></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="progress-bar" style={{ flex: 1 }}>
+            <div className="progress-fill" style={{ width: overallPct + '%' }} />
+          </div>
+          {topBarHidden ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <Link to="/student" className="back-link" style={{ padding: '2px 8px', fontSize: '0.78rem', minHeight: 'auto' }}>← Manuals</Link>
+              <span className="small muted" style={{ fontSize: '0.8rem' }}>{completedTasks}/{tasks.length} done ({overallPct}%)</span>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ padding: '2px 8px', fontSize: '0.78rem', minHeight: 'auto' }}
+                onClick={() => setTopBarHidden(false)}
+              >
+                ▼ Show top bar
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
+      {deadlineElapsed && !isCompleted && (
+        <div className="error" style={{ margin: '12px 18px' }}>
+          The submission deadline has elapsed. Your manual is recorded as incomplete ({completedTasks}/{tasks.length} tasks completed).
+        </div>
+      )}
 
       <div className="workspace-mobile-tabs mobile-only">
         <button className={'tab sm' + (pane === 'manual' ? ' tab-active' : '')} onClick={() => setPane('manual')}>📖 Manual</button>
@@ -360,14 +469,13 @@ export default function StudentManualWorkspace() {
           <div className="task-stepper">
             {tasks.map((t, idx) => {
               const s = subMap[t.id]
-              const done = s && ['submitted', 'graded'].includes(s.status)
-              const graded = s?.status === 'graded'
+              const done = isTaskCompleted(s)
               return (
                 <button
                   key={t.id}
                   type="button"
-                  className={'stepper-dot' + (taskIdx === idx ? ' active' : '') + (graded ? ' graded' : done ? ' done' : '')}
-                  onClick={() => setTaskIdx(idx)}
+                  className={'stepper-dot' + (taskIdx === idx ? ' active' : '') + (done ? ' done' : '')}
+                  onClick={() => selectTask(idx)}
                   title={`Task ${t.order_index}${t.title ? `: ${t.title}` : ''}`}
                 >
                   <span>{t.order_index ?? idx + 1}</span>
@@ -385,7 +493,7 @@ export default function StudentManualWorkspace() {
                   <div className="row" style={{ alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <span className="task-order-pill">#{task.order_index}</span>
                     <h2 className="mb-0" style={{ fontSize: 18 }}>{task.title}</h2>
-                    {badgeFromStatus(sub?.status || 'not_started')}
+                    {badgeFromStatus(sub)}
                     {autoPass === true && <span className="badge badge-graded" title="Expected output match">Run passed</span>}
                     {autoPass === false && <span className="badge badge-submitted" title="Expected output mismatch">Run without match</span>}
                   </div>
@@ -394,9 +502,11 @@ export default function StudentManualWorkspace() {
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <span className="small muted">{task.language === 'javascript' ? 'JavaScript' : 'Python'}</span>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setTaskIdx(Math.max(0, taskIdx - 1))} disabled={taskIdx === 0}>← Prev</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setTaskIdx(Math.min(tasks.length - 1, taskIdx + 1))} disabled={taskIdx === tasks.length - 1 || !canGoNext}>
+                  <span className="small muted">
+                    {TASK_LANGUAGES.find(({ value }) => value === normalizeTaskLanguage(task.language))?.label || 'Python'}
+                  </span>
+                  <button className="btn btn-ghost btn-sm" onClick={() => selectTask(taskIdx - 1)} disabled={taskIdx === 0}>← Prev</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => selectTask(taskIdx + 1)} disabled={taskIdx === tasks.length - 1}>
                     Next →
                   </button>
                 </div>
@@ -421,35 +531,38 @@ export default function StudentManualWorkspace() {
               <div style={{ height: 14 }} />
 
               <div className="task-actions">
-                <div className="row" style={{ alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <button className="btn btn-sm" onClick={doRun} disabled={running}>
-                  {running ? 'Running…' : '▶ Run'}
-                </button>
-                <button className="btn btn-secondary btn-sm" onClick={() => {
-                  if (window.confirm('Reset editor to starter code? Unsaved draft will be lost.')) {
-                    setCode(task.starter_code || '')
-                    setRunOutput('')
-                    setRunResult(null)
-                    setAutoPass(null)
-                    setShowExpected(false)
-                  }
-                }}>Reset starter</button>
-                <span className="small muted">Auto-saves draft as you type.</span>
-                <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-                  <button className="btn btn-sm" onClick={doSubmit} disabled={saving}>
-                    {saving ? 'Submitting…' : 'Submit for grading'}
-                  </button>
-                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <button className="btn btn-sm" onClick={doRun} disabled={running || deadlineElapsed || isTaskCompleted(sub)}>
+                      {running ? 'Running…' : '▶ Run'}
+                    </button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => {
+                      if (window.confirm('Reset editor to starter code? Unsaved draft will be lost.')) {
+                        setCode(task.starter_code || '')
+                        setRunOutput('')
+                        setRunResult(null)
+                        setPreviewHtml(null)
+                        setAutoPass(null)
+                      }
+                    }}>Reset</button>
+                  </div>
+                  <span className="small muted desktop-only">Auto-saves draft as you type.</span>
+                  <div style={{ marginLeft: 'auto' }}>
+                    <button className="btn btn-sm" onClick={doSubmit} disabled={saving || deadlineElapsed || isTaskCompleted(sub)}>
+                      {saving ? 'Checking…' : isTaskCompleted(sub) ? '✓ Completed' : 'Submit correct answer'}
+                    </button>
+                  </div>
                 </div>
               </div>
 
               <div style={{ height: 12 }} />
               <CodeEditor
                 value={code}
-                onChange={setCode}
-                language={task.language === 'javascript' ? 'javascript' : 'python'}
+                onChange={handleCodeChange}
+                language={normalizeTaskLanguage(task.language)}
                 mobile={true}
                 height="60dvh"
+                readOnly={deadlineElapsed || isTaskCompleted(sub)}
               />
 
               <div style={{ height: 14 }} />
@@ -460,14 +573,22 @@ export default function StudentManualWorkspace() {
                     {autoPass ? 'Matches expected output.' : 'Does not match expected output.'}
                   </span>
                 )}
-                {task.expected_output && (
-                  <button className="btn btn-ghost btn-sm" onClick={() => setShowExpected((v) => !v)}>
-                    {showExpected ? 'Hide expected output' : 'Show expected output'}
-                  </button>
-                )}
               </div>
-              {showExpected && task.expected_output && (
-                <pre className="code-block code-block-expected" style={{ marginTop: 10 }}>{task.expected_output}</pre>
+              {previewHtml !== null && (
+                <iframe
+                  title="Code preview"
+                  sandbox=""
+                  srcDoc={previewHtml}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    minHeight: 280,
+                    marginTop: 10,
+                    border: '1px solid rgba(255,255,255,0.12)',
+                    borderRadius: 12,
+                    background: '#fff',
+                  }}
+                />
               )}
               <pre className="code-block" style={{ minHeight: 80, marginTop: 10 }}>
                 {runOutput || '(no output yet — click Run)'}

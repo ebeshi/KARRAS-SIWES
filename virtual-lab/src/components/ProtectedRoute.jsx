@@ -20,7 +20,7 @@ export default function ProtectedRoute({ children, requiredRole }) {
   }
 
   if (requiredRole && profile.role !== requiredRole) {
-    const redirectTo = profile.role === 'instructor' ? '/instructor' : '/student'
+    const redirectTo = profile.role === 'admin' ? '/admin' : profile.role === 'instructor' ? '/instructor' : '/student'
     return <Navigate to={redirectTo} replace />
   }
 
