@@ -3,7 +3,7 @@ import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 
 export default function Login() {
-  const { signIn, profile, loading } = useAuth()
+  const { signIn, signOut, profile, loading } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [email, setEmail] = useState('')
@@ -11,21 +11,44 @@ export default function Login() {
   const [error, setError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
 
+  const dashboardPath = profile?.role === 'admin'
+    ? '/admin'
+    : profile?.role === 'instructor'
+      ? '/instructor'
+      : '/student'
+
   useEffect(() => {
-    if (profile) {
-      const to = profile.role === 'admin' ? '/admin' : profile.role === 'instructor' ? '/instructor' : '/student'
-      navigate(to, { replace: true })
-    }
-  }, [profile, navigate])
+    setError(null)
+  }, [profile])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError(null)
     setSubmitting(true)
     try {
-      await signIn(email.trim(), password)
+      const result = await signIn(email.trim(), password)
+      const destination = result.profile.role === 'admin'
+        ? '/admin'
+        : result.profile.role === 'instructor'
+          ? '/instructor'
+          : '/student'
+      navigate(destination, { replace: true })
     } catch (err) {
       setError(err.message || 'Sign in failed')
+      setSubmitting(false)
+    }
+  }
+
+  const handleSwitchAccount = async () => {
+    setError(null)
+    setSubmitting(true)
+    try {
+      await signOut()
+      setEmail('')
+      setPassword('')
+    } catch (err) {
+      setError(err.message || 'Could not sign out of the current account.')
+    } finally {
       setSubmitting(false)
     }
   }
@@ -54,6 +77,31 @@ export default function Login() {
           <h2>Sign in</h2>
           {location.state?.notice && <div className="success">{location.state.notice}</div>}
           {error && <div className="error">{error}</div>}
+          {profile ? (
+            <div>
+              <p className="muted">
+                You are currently signed in as <strong>{profile.email}</strong> ({profile.role}).
+              </p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn"
+                  disabled={showSpinner}
+                  onClick={() => navigate(dashboardPath, { replace: true })}
+                >
+                  Continue to dashboard
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={showSpinner}
+                  onClick={handleSwitchAccount}
+                >
+                  {submitting ? 'Signing out…' : 'Sign out and use another account'}
+                </button>
+              </div>
+            </div>
+          ) : (
           <form onSubmit={handleSubmit}>
             <div className="field">
               <label className="label" htmlFor="email">Email address</label>
@@ -86,6 +134,7 @@ export default function Login() {
               {showSpinner ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
+          )}
 
           {/* Quick Registration Links */}
           <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--border)', textAlign: 'center' }}>

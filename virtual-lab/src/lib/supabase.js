@@ -9,4 +9,10 @@ export const initError = supabaseMissing
   : null
 export const supabase = supabaseMissing
   ? null
-  : createClient(supabaseUrl, supabaseAnonKey)
+  : createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        storage: window.sessionStorage,
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+    })

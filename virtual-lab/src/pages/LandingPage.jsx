@@ -1,8 +1,19 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 
 export default function LandingPage() {
-  const { profile } = useAuth()
+  const { profile, signOut } = useAuth()
+  const [signOutError, setSignOutError] = useState(null)
+
+  const handleSignOut = async () => {
+    setSignOutError(null)
+    try {
+      await signOut()
+    } catch (error) {
+      setSignOutError(error.message || 'Could not sign out of the current account.')
+    }
+  }
 
   const dashboardPath = profile
     ? profile.role === 'admin'
@@ -38,9 +49,17 @@ export default function LandingPage() {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {profile ? (
-              <Link to={dashboardPath} className="btn btn-sm">
-                Dashboard ({profile.role}) →
-              </Link>
+              <>
+                <Link to={dashboardPath} className="btn btn-sm">
+                  Dashboard ({profile.role}) →
+                </Link>
+                <Link to="/login" className="btn btn-ghost btn-sm" style={{ border: '1px solid var(--border)' }}>
+                  Switch account
+                </Link>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={handleSignOut}>
+                  Sign out
+                </button>
+              </>
             ) : (
               <>
                 <Link to="/login" className="btn btn-ghost btn-sm" style={{ border: '1px solid var(--border)' }}>
@@ -53,6 +72,7 @@ export default function LandingPage() {
             )}
           </div>
         </div>
+        {signOutError && <p className="error" role="alert">{signOutError}</p>}
       </header>
 
       {/* Hero Section */}

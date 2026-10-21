@@ -173,6 +173,21 @@ AS $$
     SELECT institution_id FROM public.users WHERE id = auth.uid()
 $$;
 
+CREATE FUNCTION public.normalize_task_output(output_text TEXT)
+RETURNS TEXT
+LANGUAGE SQL
+IMMUTABLE
+PARALLEL SAFE
+SET search_path = pg_catalog
+AS $$
+    SELECT regexp_replace(
+        replace(COALESCE(output_text, ''), E'\r\n', E'\n'),
+        '^[[:space:]]+|[[:space:]]+$',
+        '',
+        'g'
+    )
+$$;
+
 GRANT EXECUTE ON FUNCTION public.auth_user_role() TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.auth_user_institution_id() TO anon, authenticated;
 
@@ -579,8 +594,8 @@ BEGIN
         END IF;
         IF COALESCE(BTRIM(expected_output), '') = ''
            OR p_auto_passed IS DISTINCT FROM TRUE
-           OR BTRIM(REPLACE(COALESCE(p_run_output, ''), E'\r\n', E'\n'))
-              <> BTRIM(REPLACE(expected_output, E'\r\n', E'\n')) THEN
+           OR public.normalize_task_output(p_run_output)
+              <> public.normalize_task_output(expected_output) THEN
             RAISE EXCEPTION 'The answer must run and match the expected output before it can be submitted';
         END IF;
     END IF;

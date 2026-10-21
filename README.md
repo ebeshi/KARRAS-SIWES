@@ -37,6 +37,9 @@ designed to be public; database access is controlled by Row Level Security.
 1. In the Supabase Dashboard, open **SQL Editor**, paste all of
    [`supabase/schema.sql`](./supabase/schema.sql), and run it once. This is the consolidated
    PostgreSQL setup for a fresh project and the only schema setup script in this repository.
+   If your project was initialized with an earlier version, run
+   [`supabase/fix_task_output_whitespace.sql`](./supabase/fix_task_output_whitespace.sql)
+   instead; do not rerun the full schema on an initialized database.
 2. In **Authentication → URL Configuration**, set the Site URL to your Vercel URL and add
    the local development URL and your Vercel preview/production URLs to the allowed redirect
    URLs. Email confirmation can stay enabled; new users will be prompted to confirm before
