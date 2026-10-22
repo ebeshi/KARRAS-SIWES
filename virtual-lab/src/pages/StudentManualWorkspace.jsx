@@ -413,7 +413,11 @@ export default function StudentManualWorkspace() {
             )}
           </div>
           {pdfUrl ? (
-            <ManualPdfViewer url={pdfUrl} />
+            <ManualPdfViewer
+              url={pdfUrl}
+              allowDownload
+              downloadName={manual.title}
+            />
           ) : (
             <div className="pdf-viewer-card" style={{ margin: 12, padding: 18 }}>
               <div className="row" style={{ alignItems: 'flex-start', marginBottom: 10 }}>

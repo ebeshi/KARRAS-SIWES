@@ -870,6 +870,7 @@ input[type="datetime-local"] {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
   flex-shrink: 0;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
@@ -878,6 +879,19 @@ input[type="datetime-local"] {
 .manual-pdf-toolbar .btn {
   min-width: 38px;
   padding-inline: 10px;
+}
+.manual-pdf-download {
+  white-space: nowrap;
+}
+.manual-pdf-download-error {
+  padding: 8px 12px;
+  color: var(--danger);
+  font-size: 0.85rem;
+  background: rgba(248, 113, 113, 0.06);
+  border-bottom: 1px solid var(--border);
+}
+.manual-pdf-download-error a {
+  color: inherit;
 }
 .manual-pdf-toolbar-spacer {
   flex: 1;

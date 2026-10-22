@@ -20,7 +20,12 @@ const getPdfSource = (url) => {
   }
 }
 
-export default function ManualPdfViewer({ url, className = '' }) {
+export default function ManualPdfViewer({
+  url,
+  className = '',
+  allowDownload = false,
+  downloadName = 'manual',
+}) {
   const canvasRef = useRef(null)
   const viewerRef = useRef(null)
   const [document, setDocument] = useState(null)
@@ -31,6 +36,8 @@ export default function ManualPdfViewer({ url, className = '' }) {
   const [renderedSize, setRenderedSize] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState(null)
   const pdfSource = getPdfSource(url)
 
   useEffect(() => {
@@ -165,6 +172,33 @@ export default function ManualPdfViewer({ url, className = '' }) {
     setPageInput(String(boundedPage))
   }
 
+  const downloadPdf = async () => {
+    setDownloading(true)
+    setDownloadError(null)
+    try {
+      const response = await fetch(pdfSource)
+      if (!response.ok) {
+        throw new Error(`Download failed (HTTP ${response.status}).`)
+      }
+      const blob = await response.blob()
+      const objectUrl = URL.createObjectURL(blob)
+      const filename = String(downloadName || 'manual')
+        .replace(/[\\/:*?"<>|]/g, '-')
+        .trim() || 'manual'
+      const anchor = window.document.createElement('a')
+      anchor.href = objectUrl
+      anchor.download = /\.pdf$/i.test(filename) ? filename : `${filename}.pdf`
+      window.document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+    } catch (downloadFailure) {
+      setDownloadError(downloadFailure.message || String(downloadFailure))
+    } finally {
+      setDownloading(false)
+    }
+  }
+
   return (
     <section ref={viewerRef} className={`manual-pdf-viewer ${className}`.trim()} aria-label="Manual PDF viewer">
       <div className="manual-pdf-toolbar">
@@ -223,7 +257,24 @@ export default function ManualPdfViewer({ url, className = '' }) {
         >
           +
         </button>
+        {allowDownload && (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm manual-pdf-download"
+            onClick={downloadPdf}
+            disabled={downloading}
+            aria-label="Download manual PDF"
+          >
+            {downloading ? 'Downloading…' : '↓ Download'}
+          </button>
+        )}
       </div>
+      {downloadError && (
+        <div className="manual-pdf-download-error" role="alert">
+          Could not download this PDF: {downloadError}{' '}
+          <a href={pdfSource} target="_blank" rel="noreferrer noopener">Open the PDF instead</a>
+        </div>
+      )}
       <div className="manual-pdf-page-container">
         {loading && <div className="manual-pdf-status">Loading manual…</div>}
         {error && (
