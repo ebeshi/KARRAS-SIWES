@@ -909,10 +909,14 @@ input[type="datetime-local"] {
   text-align: center;
   -webkit-overflow-scrolling: touch;
 }
+.manual-pdf-canvas-wrap {
+  position: relative;
+  margin: 0 auto;
+}
 .manual-pdf-canvas {
   display: block;
   max-width: none;
-  margin: 0 auto;
+  transform-origin: top left;
   background: white;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
 }

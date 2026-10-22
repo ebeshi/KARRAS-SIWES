@@ -28,6 +28,7 @@ export default function ManualPdfViewer({ url, className = '' }) {
   const [pageInput, setPageInput] = useState(() => String(getInitialPage(url)))
   const [zoom, setZoom] = useState(1)
   const [viewerWidth, setViewerWidth] = useState(0)
+  const [renderedSize, setRenderedSize] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const pdfSource = getPdfSource(url)
@@ -71,7 +72,10 @@ export default function ManualPdfViewer({ url, className = '' }) {
   }, [pdfSource])
 
   useEffect(() => {
-    const updateWidth = () => setViewerWidth(viewerRef.current?.clientWidth || 0)
+    const updateWidth = () => {
+      const nextWidth = viewerRef.current?.clientWidth || 0
+      setViewerWidth((currentWidth) => currentWidth === nextWidth ? currentWidth : nextWidth)
+    }
     updateWidth()
     if (typeof ResizeObserver === 'undefined') {
       window.addEventListener('resize', updateWidth)
@@ -98,6 +102,7 @@ export default function ManualPdfViewer({ url, className = '' }) {
 
     let active = true
     let renderTask
+    setRenderedSize(null)
     const renderPage = async () => {
       try {
         setError(null)
@@ -123,6 +128,12 @@ export default function ManualPdfViewer({ url, className = '' }) {
           transform: outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0],
         })
         await renderTask.promise
+        if (active) {
+          setRenderedSize({
+            width: Math.ceil(viewport.width),
+            height: Math.ceil(viewport.height),
+          })
+        }
       } catch (renderError) {
         if (active && renderError.name !== 'RenderingCancelledException') {
           setError(`Could not render this PDF page: ${renderError.message || String(renderError)}`)
@@ -135,7 +146,7 @@ export default function ManualPdfViewer({ url, className = '' }) {
       active = false
       renderTask?.cancel()
     }
-  }, [document, pageNumber, viewerWidth, zoom])
+  }, [document, pageNumber, viewerWidth])
 
   useEffect(() => {
     if (document && pageNumber > document.numPages) {
@@ -155,7 +166,7 @@ export default function ManualPdfViewer({ url, className = '' }) {
   }
 
   return (
-    <section className={`manual-pdf-viewer ${className}`.trim()} aria-label="Manual PDF viewer">
+    <section ref={viewerRef} className={`manual-pdf-viewer ${className}`.trim()} aria-label="Manual PDF viewer">
       <div className="manual-pdf-toolbar">
         <button
           type="button"
@@ -213,7 +224,7 @@ export default function ManualPdfViewer({ url, className = '' }) {
           +
         </button>
       </div>
-      <div className="manual-pdf-page-container" ref={viewerRef}>
+      <div className="manual-pdf-page-container">
         {loading && <div className="manual-pdf-status">Loading manual…</div>}
         {error && (
           <div className="manual-pdf-status manual-pdf-error" role="alert">
@@ -221,7 +232,24 @@ export default function ManualPdfViewer({ url, className = '' }) {
             <a href={url} target="_blank" rel="noreferrer noopener">Open or download the original PDF</a>
           </div>
         )}
-        <canvas ref={canvasRef} className="manual-pdf-canvas" aria-label={`PDF page ${pageNumber}`} />
+        <div
+          className="manual-pdf-canvas-wrap"
+          style={renderedSize ? {
+            width: `${renderedSize.width * zoom}px`,
+            height: `${renderedSize.height * zoom}px`,
+          } : undefined}
+        >
+          <canvas
+            ref={canvasRef}
+            className="manual-pdf-canvas"
+            style={renderedSize ? {
+              width: `${renderedSize.width}px`,
+              height: `${renderedSize.height}px`,
+              transform: `scale(${zoom})`,
+            } : undefined}
+            aria-label={`PDF page ${pageNumber}`}
+          />
+        </div>
       </div>
     </section>
   )
