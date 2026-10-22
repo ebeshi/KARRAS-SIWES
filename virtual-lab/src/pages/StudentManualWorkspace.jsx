@@ -7,6 +7,7 @@ import {
 } from '../lib/manualsQueries.js'
 import { runCode } from '../lib/runCode.js'
 import CodeEditor from '../components/CodeEditor.jsx'
+import ManualPdfViewer from '../components/ManualPdfViewer.jsx'
 import { normalizeTaskLanguage, TASK_LANGUAGES } from '../lib/languages.js'
 
 const fmt = (iso) => { try { return new Date(iso).toLocaleString() } catch { return iso } }
@@ -412,14 +413,7 @@ export default function StudentManualWorkspace() {
             )}
           </div>
           {pdfUrl ? (
-            <iframe
-              key={pdfUrl}
-              className="pdf-frame"
-              title="Manual PDF"
-              src={pdfUrl}
-              referrerPolicy="no-referrer"
-              loading="eager"
-            />
+            <ManualPdfViewer url={pdfUrl} />
           ) : (
             <div className="pdf-viewer-card" style={{ margin: 12, padding: 18 }}>
               <div className="row" style={{ alignItems: 'flex-start', marginBottom: 10 }}>

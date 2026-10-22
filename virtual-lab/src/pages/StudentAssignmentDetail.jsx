@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
 import CodeEditor from '../components/CodeEditor.jsx'
+import ManualPdfViewer from '../components/ManualPdfViewer.jsx'
 
 const PISTON_URL = 'https://emkc.org/api/v2/piston/execute'
 
@@ -446,22 +447,12 @@ export default function StudentAssignmentDetail() {
                     target="_blank"
                     rel="noreferrer noopener"
                   >
-                    Open manual in new tab ↗
+                    Open original PDF ↗
                   </a>
                 </div>
-                <iframe
-                  title="Assignment manual"
-                  src={assignment.manual_pdf_url}
-                  className="manual-iframe"
-                  style={{
-                    width: '100%',
-                    minHeight: 420,
-                    height: '60vh',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius)',
-                    backgroundColor: '#fff',
-                    display: 'block',
-                  }}
+                <ManualPdfViewer
+                  url={assignment.manual_pdf_url}
+                  className="manual-pdf-assignment"
                 />
               </div>
             )}
